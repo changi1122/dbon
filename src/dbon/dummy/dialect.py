@@ -130,5 +130,5 @@ class Dialect:
         return "\n".join(out) + "\n"
 
 
-def render(dialect: str, rows: int, seed: int | None = None, big_rows: int = 0) -> str:
-    return Dialect(dialect).script(generate(rows, seed, big_rows))
+def render(dialect: str, rows: int, seed: int | None = None) -> str:
+    return Dialect(dialect).script(generate(rows, seed))
