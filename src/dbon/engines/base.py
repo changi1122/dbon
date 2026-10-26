@@ -134,3 +134,8 @@ class Engine:
             "admin_password": inst.admin_password,
             "jdbc": self.jdbc_url(inst),
         }
+
+
+    def setup_finished(self, inst: Instance, started_at: str) -> bool:
+        """Whether the image's own initialization (including work after the server accepts connections) has finished."""
+        return True

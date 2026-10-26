@@ -82,11 +82,14 @@ def wait_ready(inst: Instance, timeout: int, log: Log = _noop) -> str:
 
         note = f"status={status}" + (f", health={health}" if health else "")
         if status == "running" and health in (None, "healthy"):
-            for pw in engine.probe_passwords(inst):
-                proc = run_sql(inst, engine.probe_sql, admin=True, admin_password=pw, check=False)
-                if proc.returncode == 0 and not _has_error(inst.engine, proc.stdout + proc.stderr):
-                    return pw
-            note += ", waiting for connection"
+            if not engine.setup_finished(inst, state.get("StartedAt", "")):
+                note += ", waiting for image setup"
+            else:
+                for pw in engine.probe_passwords(inst):
+                    proc = run_sql(inst, engine.probe_sql, admin=True, admin_password=pw, check=False)
+                    if proc.returncode == 0 and not _has_error(inst.engine, proc.stdout + proc.stderr):
+                        return pw
+                note += ", waiting for connection"
         if note != last_note:
             log(f"  [{int(time.monotonic() - started)}s] {note}")
             last_note = note

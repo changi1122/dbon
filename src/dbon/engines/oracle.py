@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from dbon import docker
 from dbon.engines.base import Engine, ExecSpec
 from dbon.instance import Instance
 
@@ -26,6 +27,7 @@ class Oracle(Engine):
         "21": {"image": "gvenzl/oracle-xe:21-slim", "flavor": "gvenzl", "service": "XEPDB1", "volume_path": ORADATA},
         "23": {"image": "gvenzl/oracle-free:23-slim", "flavor": "gvenzl", "service": "FREEPDB1", "volume_path": ORADATA},
     }
+    ready_marker = "DATABASE IS READY TO USE!"
 
     def prepare(self, inst: Instance) -> None:
         super().prepare(inst)
@@ -94,3 +96,8 @@ GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE SEQUENCE, CREATE SYNONYM, CREATE PR
 
     def jdbc_url(self, inst):
         return f"jdbc:oracle:thin:@//localhost:{inst.port}/{inst.extra['service']}"
+
+    def setup_finished(self, inst, started_at):
+        # Previous logs persist across restarts, so only check logs since the current start
+        proc = docker.run(["logs", "--since", started_at, inst.container], check=False)
+        return self.ready_marker in proc.stdout + proc.stderr
