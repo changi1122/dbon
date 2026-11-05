@@ -14,24 +14,26 @@ Windows에서는 Docker Desktop, Linux에서는 Docker Engine과 Docker Compose 
 
 ### Windows (PowerShell)
 
-프로젝트 디렉터리에서 가상환경을 만들고 `dbon`을 설치합니다.
+저장소를 clone한 다음, 프로젝트 디렉터리에서 가상환경을 만들고 `dbon`을 설치합니다.
 
 ```powershell
+git clone https://github.com/changi1122/dbon.git
+cd dbon
 python -m venv .venv
 .venv\Scripts\python -m pip install -e .
 ```
 
 #### `dbon` 명령을 어디서나 사용하기 (권장: pipx)
 
-`pipx`를 설치하고 사용자 PATH를 설정한 다음, editable 모드로 프로젝트를 설치합니다.
+프로젝트 디렉터리에서 `pipx`를 설치하고 사용자 PATH를 설정한 다음, editable 모드로 프로젝트를 설치합니다.
 
 ```powershell
 py -m pip install --user pipx
 py -m pipx ensurepath
-py -m pipx install -e C:\project\dbon
+py -m pipx install --force -e .
 ```
 
-`C:\project\dbon`은 실제 프로젝트 경로로 바꾸세요. 새 터미널을 열고 다음 명령으로 설치를 확인합니다.
+새 터미널을 열고 다음 명령으로 설치를 확인합니다.
 
 ```powershell
 dbon engines
@@ -49,23 +51,25 @@ py -m pipx uninstall dbon
 py -m pipx reinstall dbon
 ```
 
-또는 가상환경의 `Scripts` 디렉터리를 사용자 PATH에 추가할 수 있습니다.
+또는 프로젝트 디렉터리에서 다음 명령을 실행해 가상환경의 `Scripts` 디렉터리를 사용자 PATH에 추가할 수 있습니다.
 
 ```powershell
 [Environment]::SetEnvironmentVariable(
     "Path",
-    [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\project\dbon\.venv\Scripts",
+    [Environment]::GetEnvironmentVariable("Path", "User") + ";$(Resolve-Path .venv\Scripts)",
     "User"
 )
 ```
 
-예시 경로를 실제 프로젝트 경로로 바꾸세요. PATH 변경 사항을 적용하려면 새 터미널을 열어야 합니다.
+PATH 변경 사항을 적용하려면 새 터미널을 열어야 합니다.
 
 ### Linux (Bash)
 
-프로젝트 디렉터리에서 가상환경을 만들고 `dbon`을 설치합니다.
+저장소를 clone한 다음, 프로젝트 디렉터리에서 가상환경을 만들고 `dbon`을 설치합니다.
 
 ```bash
+git clone https://github.com/changi1122/dbon.git
+cd dbon
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
@@ -80,10 +84,10 @@ sudo apt install pipx
 pipx ensurepath
 ```
 
-그런 다음 editable 모드로 프로젝트를 설치합니다. `/path/to/dbon`은 로컬 저장소의 실제 경로로 바꾸세요.
+그런 다음 프로젝트 디렉터리에서 editable 모드로 프로젝트를 설치합니다.
 
 ```bash
-pipx install -e /path/to/dbon
+pipx install --force -e .
 ```
 
 새 터미널을 열고 설치를 확인합니다.
@@ -104,15 +108,10 @@ pipx uninstall dbon
 pipx reinstall dbon
 ```
 
-또는 가상환경의 `bin` 디렉터리를 PATH에 추가할 수 있습니다. `~/.bashrc`에 다음 줄을 추가하세요.
+또는 프로젝트 디렉터리에서 다음 명령을 실행해 가상환경의 `bin` 디렉터리를 `~/.bashrc`의 PATH에 추가하고 셸 설정을 다시 불러올 수 있습니다.
 
 ```bash
-export PATH="/path/to/dbon/.venv/bin:$PATH"
-```
-
-`/path/to/dbon`을 실제 프로젝트 경로로 바꾼 다음 셸 설정을 다시 불러옵니다.
-
-```bash
+echo "export PATH=\"$PWD/.venv/bin:\$PATH\"" >> ~/.bashrc
 source ~/.bashrc
 ```
 

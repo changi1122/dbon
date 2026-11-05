@@ -14,24 +14,26 @@ See [SPEC.md](SPEC.md) for the detailed design specification.
 
 ### Windows (PowerShell)
 
-Create a virtual environment and install `dbon` from the project directory:
+Clone the repository, then create a virtual environment and install `dbon` from the project directory:
 
 ```powershell
+git clone https://github.com/changi1122/dbon.git
+cd dbon
 python -m venv .venv
 .venv\Scripts\python -m pip install -e .
 ```
 
 #### Make the `dbon` command available everywhere (recommended: pipx)
 
-Install `pipx`, ensure its executable directory is on your user PATH, and install the project in editable mode:
+From the project directory, install `pipx`, ensure its executable directory is on your user PATH, and install the project in editable mode:
 
 ```powershell
 py -m pip install --user pipx
 py -m pipx ensurepath
-py -m pipx install -e C:\project\dbon
+py -m pipx install --force -e .
 ```
 
-Replace `C:\project\dbon` with the actual path to your local clone. Open a new terminal, then verify the installation:
+Open a new terminal, then verify the installation:
 
 ```powershell
 dbon engines
@@ -49,23 +51,25 @@ If you change dependencies in `pyproject.toml`, reinstall the environment:
 py -m pipx reinstall dbon
 ```
 
-Alternatively, add the virtual environment's `Scripts` directory to your user PATH:
+Alternatively, from the project directory, add the virtual environment's `Scripts` directory to your user PATH:
 
 ```powershell
 [Environment]::SetEnvironmentVariable(
     "Path",
-    [Environment]::GetEnvironmentVariable("Path", "User") + ";C:\project\dbon\.venv\Scripts",
+    [Environment]::GetEnvironmentVariable("Path", "User") + ";$(Resolve-Path .venv\Scripts)",
     "User"
 )
 ```
 
-Replace the example path with your actual project path. Open a new terminal for PATH changes to take effect.
+Open a new terminal for PATH changes to take effect.
 
 ### Linux (Bash)
 
-Create a virtual environment and install `dbon` from the project directory:
+Clone the repository, then create a virtual environment and install `dbon` from the project directory:
 
 ```bash
+git clone https://github.com/changi1122/dbon.git
+cd dbon
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
@@ -80,10 +84,10 @@ sudo apt install pipx
 pipx ensurepath
 ```
 
-Then install the project in editable mode (replace the example path with the actual path to your local clone):
+Then install the project in editable mode from the project directory:
 
 ```bash
-pipx install -e /path/to/dbon
+pipx install --force -e .
 ```
 
 Open a new terminal and verify the installation:
@@ -104,15 +108,10 @@ If you change dependencies in `pyproject.toml`, reinstall the environment:
 pipx reinstall dbon
 ```
 
-Alternatively, add the virtual environment's `bin` directory to your PATH. Add the following line to `~/.bashrc`:
+Alternatively, from the project directory, add the virtual environment's `bin` directory to your PATH in `~/.bashrc` and reload the shell configuration:
 
 ```bash
-export PATH="/path/to/dbon/.venv/bin:$PATH"
-```
-
-Replace `/path/to/dbon` with your actual project path, then reload the shell configuration:
-
-```bash
+echo "export PATH=\"$PWD/.venv/bin:\$PATH\"" >> ~/.bashrc
 source ~/.bashrc
 ```
 
