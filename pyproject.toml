@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dbon"
 version = "0.1.0"
-description = "Spin up dev DBMS containers (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2) with docker compose"
+description = "Spin up dev DBMS containers (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2, altibase) with docker compose"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

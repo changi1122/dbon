@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from dbon.dummy.data import Column, Table, generate
 
-DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2")
+DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2", "altibase")
 
 _TYPES = {
     "oracle": {"int": "NUMBER(10)", "varchar": "VARCHAR2({0} CHAR)", "char": "CHAR({0} CHAR)",
@@ -27,10 +27,13 @@ _TYPES = {
     # VARCHAR(n) counts bytes in a UTF-8 database: CODEUNITS32 counts characters, like oracle's CHAR semantics
     "db2": {"int": "INTEGER", "varchar": "VARCHAR({0} CODEUNITS32)", "char": "CHAR({0} CODEUNITS32)",
             "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP(0)"},
+    # VARCHAR(n) counts bytes; DATE carries the time as well
+    "altibase": {"int": "INTEGER", "varchar": "NVARCHAR({0})", "char": "NCHAR({0})",
+                 "decimal": "NUMERIC({0},{1})", "date": "DATE", "timestamp": "DATE"},
 }
 _TYPES["mariadb"] = _TYPES["mysql"]
 
-BATCH = {"oracle": 200, "mssql": 500, "sybase": 200}
+BATCH = {"oracle": 200, "mssql": 500, "sybase": 200, "altibase": 200}  # altibase isql rejects ~110KB statements
 DEFAULT_BATCH = 500
 
 
@@ -51,10 +54,14 @@ class Dialect:
             return str(value)
         if isinstance(value, datetime):
             s = value.strftime("%Y-%m-%d %H:%M:%S")
+            if self.name == "altibase":
+                return f"TO_DATE('{s}', 'YYYY-MM-DD HH24:MI:SS')"
             return {"oracle": f"TIMESTAMP '{s}'", "postgres": f"TIMESTAMP '{s}'", "cubrid": f"DATETIME '{s}'",
                     "db2": f"TIMESTAMP '{s}'"}.get(self.name, f"'{s}'")
         if isinstance(value, date):
             s = value.isoformat()
+            if self.name == "altibase":
+                return f"TO_DATE('{s}', 'YYYY-MM-DD')"
             return f"DATE '{s}'" if self.name in ("oracle", "postgres", "cubrid", "db2") else f"'{s}'"
         s = str(value).replace("'", "''")
         if self.name in ("mysql", "mariadb"):
@@ -96,6 +103,8 @@ class Dialect:
             )
         if self.name == "sybase":
             return f"IF OBJECT_ID('{name}') IS NOT NULL DROP TABLE {name}"
+        if self.name == "altibase":  # no IF EXISTS; a real failure still surfaces at the CREATE TABLE that follows
+            return f"BEGIN\n  EXECUTE IMMEDIATE 'DROP TABLE {name} CASCADE';\nEXCEPTION WHEN OTHERS THEN NULL;\nEND;\n/"
         return f"DROP TABLE IF EXISTS {name};"
 
     # ---- DML ----------------------------------------------------------------

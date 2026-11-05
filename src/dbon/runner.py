@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 import time
 import uuid
@@ -46,13 +47,26 @@ def run_sql(
     failed = proc.returncode != 0 or _has_error(inst.engine, proc.stdout + proc.stderr)
     if check and failed:
         out = (proc.stdout + proc.stderr).strip()
-        raise RunError(f"SQL execution failed (exit code {proc.returncode})\n{_tail(out, 40)}")
+        raise RunError(f"SQL execution failed (exit code {proc.returncode})\n{_failure_excerpt(inst.engine, out)}")
     return proc
 
 
+_ALTIBASE_ERROR = re.compile(r"^\[ERR-", re.MULTILINE)
+
+
 def _has_error(engine: str, output: str) -> bool:
-    # csql reports statement errors but still exits 0
+    # csql and isql (altibase) report statement errors but still exit 0
+    if engine == "altibase":
+        return _ALTIBASE_ERROR.search(output) is not None
     return engine == "cubrid" and "ERROR:" in output
+
+
+def _failure_excerpt(engine: str, output: str) -> str:
+    # altibase isql keeps running after an error, so the first error can be far from the end of the output
+    match = _ALTIBASE_ERROR.search(output) if engine == "altibase" else None
+    if match:
+        return "\n".join(output[match.start():].splitlines()[:40])
+    return _tail(output, 40)
 
 
 def _tail(text: str, n: int) -> str:

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 import yaml
 
-from dbon import cli, config, engines, instance
+from dbon import cli, config, engines, instance, runner
 from dbon.dummy import DIALECTS, Dialect, render
 from dbon.dummy.data import generate
 from dbon.instance import Instance
@@ -60,7 +60,7 @@ def test_parse_target_aliases():
     assert engines.parse_target("ms-sql:2019") == (engines.get("mssql"), "2019")
     assert engines.parse_target("maria")[1] == "11.4"
     with pytest.raises(engines.EngineError):
-        engines.parse_target("altibase")
+        engines.parse_target("nosuchdb")
     with pytest.raises(engines.EngineError):
         engines.get("oracle").spec("8")
 
@@ -154,6 +154,8 @@ def test_render_script(dialect):
         assert "INSERT ALL" in sql and "CASCADE CONSTRAINTS" in sql
     elif dialect == "sybase":
         assert "IF OBJECT_ID('dbon_orders') IS NOT NULL DROP TABLE dbon_orders" in sql
+    elif dialect == "altibase":
+        assert "EXECUTE IMMEDIATE 'DROP TABLE dbon_orders CASCADE'" in sql and "IF EXISTS" not in sql
     else:
         assert "DROP TABLE IF EXISTS dbon_orders;" in sql
     if dialect == "mssql":
@@ -252,3 +254,59 @@ def test_first_use_notice_shown_once(home, capsys):
     assert capsys.readouterr().out == ""
     cli._notify_first_use(engines.get("mysql"))  # engines without a notice stay silent
     assert capsys.readouterr().out == ""
+
+
+# ---- altibase -----------------------------------------------------------------
+def test_altibase_dialect():
+    sql = render("altibase", 450, seed=1)
+    assert "emp_name NVARCHAR(50) NOT NULL" in sql
+    assert "gender NCHAR(1)" in sql
+    assert "created_at DATE" in sql
+    # 450 emp rows in batches of 200 (isql rejects much longer statements)
+    assert sql.count("INSERT INTO dbon_emp ") == 3
+    alti = Dialect("altibase")
+    assert alti.literal(date(2024, 1, 2)) == "TO_DATE('2024-01-02', 'YYYY-MM-DD')"
+    assert alti.literal(datetime(2024, 1, 2, 3, 4, 5)) == "TO_DATE('2024-01-02 03:04:05', 'YYYY-MM-DD HH24:MI:SS')"
+    assert alti.literal("가'나") == "'가''나'"
+
+
+def test_altibase_engine():
+    eng = engines.get("alti")
+    inst = make("altibase")
+    doc = eng.compose(inst)
+    svc = doc["services"]["db"]
+    assert svc["entrypoint"][0] == "bash" and "$$DBON_SYS_PASSWORD" in svc["entrypoint"][2]
+    assert svc["volumes"] == ["data:/root/altibase_home/dbs", "logs:/root/altibase_home/logs"]
+    assert doc["volumes"]["logs"]["labels"]["dbon.managed"] == "true"
+    assert "privileged" not in svc
+    assert inst.database == "mydb"  # prebuilt in the image
+    assert eng.jdbc_url(inst) == "jdbc:Altibase://localhost:12345/mydb"
+    assert "NON-COMMERCIAL" in eng.first_use_notice
+
+
+def test_altibase_accounts():
+    eng = engines.get("altibase")
+    inst = make("altibase")
+    assert eng.probe_passwords(inst) == ["manager", inst.admin_password]
+    sql = eng.bootstrap_sql(inst, "manager")
+    assert f'CREATE USER dbon IDENTIFIED BY "{inst.password}"' in sql
+    assert f'ALTER USER sys IDENTIFIED BY "{inst.admin_password}";' in sql
+    assert "ALTER USER sys" not in eng.bootstrap_sql(inst, inst.admin_password)
+    inst.bootstrapped = True
+    assert eng.probe_passwords(inst) == [inst.admin_password]
+    assert eng.wrap_script("SELECT 1 FROM dual;\n") == "SELECT 1 FROM dual;\nquit\n"
+
+
+def test_altibase_rejects_reserved_user():
+    inst = make("postgres")
+    inst.engine, inst.version, inst.user = "altibase", "7.3", "SYS"
+    with pytest.raises(engines.EngineError):
+        engines.get("altibase").prepare(inst)
+
+
+def test_altibase_error_detection():
+    out = "iSQL> SELECT 1;\n[ERR-31031 : Table or view was not found]\n" + "iSQL> more\n" * 100
+    assert runner._has_error("altibase", out)
+    assert not runner._has_error("altibase", "iSQL> SELECT '[ERR-' FROM dual;\n1 row selected.\n")
+    assert runner._failure_excerpt("altibase", out).startswith("[ERR-31031")
+    assert not runner._has_error("mysql", out)

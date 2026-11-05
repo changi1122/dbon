@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dbon.engines.altibase import Altibase
 from dbon.engines.base import Engine, EngineError, ExecSpec
 from dbon.engines.cubrid import Cubrid
 from dbon.engines.db2 import Db2
@@ -9,7 +10,7 @@ from dbon.engines.oracle import Oracle
 from dbon.engines.postgres import Postgres
 from dbon.engines.sybase import Sybase
 
-ENGINES: dict[str, Engine] = {e.name: e for e in (Oracle(), Postgres(), MySQL(), MariaDB(), MSSQL(), Cubrid(), Sybase(), Db2())}
+ENGINES: dict[str, Engine] = {e.name: e for e in (Oracle(), Postgres(), MySQL(), MariaDB(), MSSQL(), Cubrid(), Sybase(), Db2(), Altibase())}
 
 _ALIASES = {alias: e for e in ENGINES.values() for alias in (e.name, *e.aliases)}
 
