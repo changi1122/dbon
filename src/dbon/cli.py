@@ -37,6 +37,18 @@ def _print_info(inst: Instance) -> None:
         click.echo(f"  {k:<{width}}  {v}") 
 
 
+def _notify_first_use(engine: engines.Engine) -> None:
+    """Show an engine's notice only on its first `dbon up`; the marker outlives `rm` and `prune`."""
+    if not engine.first_use_notice:
+        return
+    marker = config.dbon_home() / "notices" / engine.name
+    if marker.exists():
+        return
+    click.echo(engine.first_use_notice)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+
 def _finish_setup(inst: Instance, timeout: int, rows: int, seed_value: int | None) -> None:
     """Wait for readiness, bootstrap once, and load dummy data if requested."""
     click.echo(f"Waiting for readiness... (timeout: {timeout}s)")
@@ -69,7 +81,7 @@ def _guard(fn):
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(package_name="dbon")
 def cli() -> None:
-    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase)."""
+    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2)."""
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +143,7 @@ def up(target, name, port, image, user, password, admin_password, database, rows
     )
     click.echo(f"[{name}] {engine.label} {version} ({image}) → localhost:{port}")
     engine.prepare(inst)
+    _notify_first_use(engine)
     _write_compose(inst)
     inst.save()
 
@@ -280,7 +293,7 @@ def sql_cmd(name, file, admin):
 @click.option("--admin", is_flag=True, help="Connect using the administrator account")
 @_guard
 def shell(name, admin):
-    """Open a DB CLI session inside the container (sqlplus/psql/mysql/sqlcmd/csql/isql)."""
+    """Open a DB CLI session inside the container (sqlplus/psql/mysql/sqlcmd/csql/isql/db2)."""
     inst = _load(name)
     spec = engines.get(inst.engine).shell(inst, admin=admin)
     sys.exit(docker.exec_interactive(inst.container, spec.cmd, user=spec.user, env=spec.env))

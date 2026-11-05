@@ -88,6 +88,8 @@ def wait_ready(inst: Instance, timeout: int, log: Log = _noop) -> str:
                 for pw in engine.probe_passwords(inst):
                     proc = run_sql(inst, engine.probe_sql, admin=True, admin_password=pw, check=False)
                     if proc.returncode == 0 and not _has_error(inst.engine, proc.stdout + proc.stderr):
+                        for spec in engine.on_ready(inst):
+                            docker.exec_(inst.container, spec.cmd, user=spec.user, env=spec.env, check=True)
                         return pw
                 note += ", waiting for connection"
         if note != last_note:

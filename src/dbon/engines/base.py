@@ -33,6 +33,7 @@ class Engine:
     base_image: ClassVar[str | None] = None  # used for versions not in the table
     probe_sql: ClassVar[str] = "SELECT 1;"
     dialect: ClassVar[str]
+    first_use_notice: ClassVar[str | None] = None  # shown once, on the first `dbon up` of this engine
 
     # ---- versions -----------------------------------------------------------
     def spec(self, version: str) -> dict[str, Any]:
@@ -109,6 +110,10 @@ class Engine:
 
     def probe_passwords(self, inst: Instance) -> list[str]:
         return [inst.admin_password]
+
+    def on_ready(self, inst: Instance) -> list[ExecSpec]:
+        """Idempotent commands run each time the server is ready, before bootstrap (for state outside the volume)."""
+        return []
 
     def bootstrap_sql(self, inst: Instance, admin_password_in_use: str) -> str:
         raise NotImplementedError

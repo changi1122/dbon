@@ -32,6 +32,8 @@ engines:
     timeout: 600
   cubrid:
     timeout: 600
+  db2:
+    timeout: 900
 """
 
 BUILTIN_DEFAULTS: dict[str, Any] = {

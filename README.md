@@ -4,7 +4,7 @@
 
 A CLI that uses Docker Compose to launch DBMS containers for development and testing, create database accounts, load dummy data, and clean up resources in one go.
 
-**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), and SAP ASE/Sybase (16.0).
+**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), SAP ASE/Sybase (16.0), and IBM Db2 (11.5.4.0/11.5.5.1/11.5.8.0).
 
 See [SPEC.md](SPEC.md) for the detailed design specification.
 
@@ -127,9 +127,10 @@ dbon up pg:16 --rows 10000 --seed 42
 dbon up oracle:19 --name ora-a            # Automatically assign ports for multiple instances (1521, 1522, ...)
 dbon up mssql:2022 --rows 0               # Start without dummy data
 dbon up sybase                            # SAP ASE 16.0 (image is approximately 9 GB; amd64)
+dbon up db2                               # IBM Db2 11.5.8.0 (image is approximately 4 GB; runs privileged)
 dbon ls                                   # List instances and their status
 dbon info mysql84                         # Show connection details and JDBC URL
-dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql inside the container
+dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql/db2 inside the container
 dbon sql mysql84 ./my.sql                 # Execute an SQL file
 dbon seed mysql84 --rows 5000             # Regenerate dummy data
 dbon stop mysql84                         # Stop the container while preserving data
@@ -138,6 +139,12 @@ dbon rm mysql84                           # Remove the container, volume, and wo
 dbon prune                                # Remove all resources created by dbon
 dbon gen oracle --rows 1000 -o dummy.sql  # Generate an SQL file only
 ```
+
+### IBM Db2 license
+
+The Db2 image runs under the IBM Db2 Community Edition license, and dbon sets `LICENSE=accept` for the container. By using Db2 through dbon you agree to [that license](https://hub.docker.com/r/ibmcom/db2). The CLI reminds you of this on your first `dbon up db2`.
+
+Db2 database names are limited to 8 characters.
 
 ## Account configuration
 

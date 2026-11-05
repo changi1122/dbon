@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 import yaml
 
-from dbon import config, engines, instance
+from dbon import cli, config, engines, instance
 from dbon.dummy import DIALECTS, Dialect, render
 from dbon.dummy.data import generate
 from dbon.instance import Instance
@@ -60,7 +60,7 @@ def test_parse_target_aliases():
     assert engines.parse_target("ms-sql:2019") == (engines.get("mssql"), "2019")
     assert engines.parse_target("maria")[1] == "11.4"
     with pytest.raises(engines.EngineError):
-        engines.parse_target("db2")
+        engines.parse_target("altibase")
     with pytest.raises(engines.EngineError):
         engines.get("oracle").spec("8")
 
@@ -186,3 +186,69 @@ def test_sybase_engine():
     assert eng.wrap_script("select 1\nGO\n") == "select 1\nGO\n"
     inst.bootstrapped = True
     assert eng.probe_passwords(inst) == [inst.admin_password]
+
+
+# ---- db2 ---------------------------------------------------------------------
+def test_db2_dialect():
+    sql = render("db2", 10, seed=1)
+    assert "emp_name VARCHAR(50 CODEUNITS32) NOT NULL" in sql
+    assert "gender CHAR(1 CODEUNITS32)" in sql
+    assert "created_at TIMESTAMP(0)" in sql
+    assert "DROP TABLE IF EXISTS dbon_orders;" in sql
+    assert Dialect("db2").literal(date(2024, 1, 2)) == "DATE '2024-01-02'"
+    assert Dialect("db2").literal(datetime(2024, 1, 2, 3, 4, 5)) == "TIMESTAMP '2024-01-02 03:04:05'"
+
+
+def test_db2_engine():
+    eng = engines.get("db2")
+    inst = make("db2")
+    svc = eng.compose(inst)["services"]["db"]
+    assert svc["privileged"] is True
+    assert svc["volumes"] == ["data:/database"]
+    assert svc["environment"]["LICENSE"] == "accept"
+    assert svc["environment"]["DB2INST1_PASSWORD"] == inst.admin_password
+    assert svc["environment"]["DBNAME"] == "testdb"
+    assert eng.jdbc_url(inst) == "jdbc:db2://localhost:12345/testdb"
+    assert eng.spec("latest") == {"image": "ibmcom/db2:latest", "volume_path": "/database"}
+
+
+def test_db2_exec_uses_instance_owner_and_utf8_client():
+    eng = engines.get("db2")
+    inst = make("db2")
+    spec = eng.exec_sql(inst, "/tmp/x.sql", admin=False)
+    assert spec.user == "db2inst1"
+    assert spec.cmd[-2:] == ["-stf", "/tmp/x.sql"]
+    assert spec.env["DB2CODEPAGE"] == "1208"
+    assert (spec.env["DBON_U"], spec.env["DBON_P"]) == (inst.user, inst.password)
+    admin = eng.exec_sql(inst, "/tmp/x.sql", admin=True, admin_password="other")
+    assert (admin.env["DBON_U"], admin.env["DBON_P"]) == ("db2inst1", "other")
+
+
+def test_db2_accounts():
+    eng = engines.get("db2")
+    inst = make("db2")
+    assert "TO USER dbon" in eng.bootstrap_sql(inst, inst.admin_password)
+    os_user = eng.on_ready(inst)[0]  # Db2 authenticates against OS accounts
+    assert os_user.user == "0"
+    assert os_user.env == {"DBON_U": "dbon", "DBON_P": inst.password}
+
+
+@pytest.mark.parametrize("field,value", [("database", "toolongdb"), ("user", "db2inst1"), ("user", "DB2FENC1")])
+def test_db2_rejects_unusable_names(field, value):
+    inst = make("postgres")
+    inst.engine, inst.version = "db2", "11.5.8.0"
+    setattr(inst, field, value)
+    with pytest.raises(engines.EngineError):
+        engines.get("db2").prepare(inst)
+
+
+def test_first_use_notice_shown_once(home, capsys):
+    db2 = engines.get("db2")
+    cli._notify_first_use(db2)
+    out = capsys.readouterr().out
+    assert "license" in out and "agree" in out
+    assert (home / "notices" / "db2").exists()
+    cli._notify_first_use(db2)
+    assert capsys.readouterr().out == ""
+    cli._notify_first_use(engines.get("mysql"))  # engines without a notice stay silent
+    assert capsys.readouterr().out == ""

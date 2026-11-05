@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from dbon.dummy.data import Column, Table, generate
 
-DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase")
+DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2")
 
 _TYPES = {
     "oracle": {"int": "NUMBER(10)", "varchar": "VARCHAR2({0} CHAR)", "char": "CHAR({0} CHAR)",
@@ -24,6 +24,9 @@ _TYPES = {
     # ASE default charset in the datagrip image is iso_1: Korean only fits in Unicode types
     "sybase": {"int": "INT", "varchar": "UNIVARCHAR({0})", "char": "UNICHAR({0})",
                "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "DATETIME"},
+    # VARCHAR(n) counts bytes in a UTF-8 database: CODEUNITS32 counts characters, like oracle's CHAR semantics
+    "db2": {"int": "INTEGER", "varchar": "VARCHAR({0} CODEUNITS32)", "char": "CHAR({0} CODEUNITS32)",
+            "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP(0)"},
 }
 _TYPES["mariadb"] = _TYPES["mysql"]
 
@@ -48,11 +51,11 @@ class Dialect:
             return str(value)
         if isinstance(value, datetime):
             s = value.strftime("%Y-%m-%d %H:%M:%S")
-            return {"oracle": f"TIMESTAMP '{s}'", "postgres": f"TIMESTAMP '{s}'", "cubrid": f"DATETIME '{s}'"}.get(
-                self.name, f"'{s}'")
+            return {"oracle": f"TIMESTAMP '{s}'", "postgres": f"TIMESTAMP '{s}'", "cubrid": f"DATETIME '{s}'",
+                    "db2": f"TIMESTAMP '{s}'"}.get(self.name, f"'{s}'")
         if isinstance(value, date):
             s = value.isoformat()
-            return f"DATE '{s}'" if self.name in ("oracle", "postgres", "cubrid") else f"'{s}'"
+            return f"DATE '{s}'" if self.name in ("oracle", "postgres", "cubrid", "db2") else f"'{s}'"
         s = str(value).replace("'", "''")
         if self.name in ("mysql", "mariadb"):
             s = s.replace("\\", "\\\\")
