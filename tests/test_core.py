@@ -156,6 +156,8 @@ def test_render_script(dialect):
         assert "IF OBJECT_ID('dbon_orders') IS NOT NULL DROP TABLE dbon_orders" in sql
     elif dialect == "altibase":
         assert "EXECUTE IMMEDIATE 'DROP TABLE dbon_orders CASCADE'" in sql and "IF EXISTS" not in sql
+    elif dialect == "firebird":
+        assert "EXECUTE STATEMENT 'DROP TABLE dbon_orders'" in sql and "IF EXISTS" not in sql
     else:
         assert "DROP TABLE IF EXISTS dbon_orders;" in sql
     if dialect == "mssql":
@@ -314,6 +316,56 @@ def test_altibase_error_detection():
     assert not runner._has_error("altibase", "iSQL> SELECT '[ERR-' FROM dual;\n1 row selected.\n")
     assert runner._failure_excerpt("altibase", out).startswith("[ERR-31031")
     assert not runner._has_error("mysql", out)
+
+
+# ---- firebird -----------------------------------------------------------------
+def test_firebird_dialect():
+    sql = render("firebird", 450, seed=1)
+    assert "emp_name VARCHAR(50) NOT NULL" in sql
+    assert "created_at TIMESTAMP" in sql
+    assert sql.count("INSERT INTO dbon_emp ") == 3  # at most 255 contexts per statement
+    assert "UNION ALL SELECT" in sql and "FROM rdb$database" in sql and "VALUES" not in sql
+    assert sql.count("SET TERM ^ ;") == sql.count("SET TERM ; ^") == 4
+    assert Dialect("firebird").literal(date(2024, 1, 2)) == "DATE '2024-01-02'"
+    assert Dialect("firebird").literal(datetime(2024, 1, 2, 3, 4, 5)) == "TIMESTAMP '2024-01-02 03:04:05'"
+
+
+def test_firebird_engine():
+    eng = engines.get("fb")
+    inst = make("firebird")
+    svc = eng.compose(inst)["services"]["db"]
+    assert svc["image"] == "firebirdsql/firebird:5"
+    assert svc["volumes"] == ["data:/var/lib/firebird/data"]
+    assert svc["environment"]["FIREBIRD_ROOT_PASSWORD"] == inst.admin_password
+    assert svc["environment"]["FIREBIRD_USER"] == inst.user
+    assert svc["environment"]["FIREBIRD_PASSWORD"] == inst.password
+    assert svc["environment"]["FIREBIRD_DATABASE"] == "testdb.fdb"
+    assert svc["environment"]["FIREBIRD_DATABASE_DEFAULT_CHARSET"] == "UTF8"
+    path = "/var/lib/firebird/data/testdb.fdb"
+    assert eng.database_label(inst) == path
+    assert eng.jdbc_url(inst) == f"jdbc:firebird://localhost:12345/{path}?encoding=UTF8"
+    assert list(eng.versions) == ["3", "4", "5"]
+    assert eng.spec("5.0.4")["image"] == "firebirdsql/firebird:5.0.4"
+
+
+def test_firebird_exec():
+    eng = engines.get("firebird")
+    inst = make("firebird")
+    spec = eng.exec_sql(inst, "/tmp/x.sql", admin=False)
+    assert spec.cmd[:2] == ["isql", "-ch"]
+    assert f"127.0.0.1/3050:/var/lib/firebird/data/testdb.fdb" in spec.cmd
+    assert spec.cmd[-3:] == ["-bail", "-i", "/tmp/x.sql"]
+    assert inst.password in spec.cmd
+    admin = eng.exec_sql(inst, "/tmp/x.sql", admin=True, admin_password="other")
+    assert "SYSDBA" in admin.cmd and "other" in admin.cmd
+    assert eng.wrap_script("SELECT 1 FROM rdb$database;\n") == "SELECT 1 FROM rdb$database;\nCOMMIT;\n"
+
+
+def test_firebird_rejects_reserved_user():
+    inst = make("postgres")
+    inst.engine, inst.version, inst.user = "firebird", "5", "sysdba"
+    with pytest.raises(engines.EngineError):
+        engines.get("firebird").prepare(inst)
 
 
 def test_extra_env_in_compose():

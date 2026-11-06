@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from dbon.dummy.data import Column, Table, generate
 
-DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2", "altibase")
+DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2", "altibase", "firebird")
 
 _TYPES = {
     "oracle": {"int": "NUMBER(10)", "varchar": "VARCHAR2({0} CHAR)", "char": "CHAR({0} CHAR)",
@@ -28,12 +28,15 @@ _TYPES = {
     "db2": {"int": "INTEGER", "varchar": "VARCHAR({0} CODEUNITS32)", "char": "CHAR({0} CODEUNITS32)",
             "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP(0)"},
     # VARCHAR(n) counts bytes; DATE carries the time as well
+    "firebird": {"int": "INTEGER", "varchar": "VARCHAR({0})", "char": "CHAR({0})",
+                 "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP"},
     "altibase": {"int": "INTEGER", "varchar": "NVARCHAR({0})", "char": "NCHAR({0})",
                  "decimal": "NUMERIC({0},{1})", "date": "DATE", "timestamp": "DATE"},
 }
 _TYPES["mariadb"] = _TYPES["mysql"]
 
-BATCH = {"oracle": 200, "mssql": 500, "sybase": 200, "altibase": 200}  # altibase isql rejects ~110KB statements
+# altibase isql rejects ~110KB statements; firebird allows at most 255 contexts (UNION ALL branches) in a statement
+BATCH = {"oracle": 200, "mssql": 500, "sybase": 200, "altibase": 200, "firebird": 200}
 DEFAULT_BATCH = 500
 
 
@@ -57,12 +60,12 @@ class Dialect:
             if self.name == "altibase":
                 return f"TO_DATE('{s}', 'YYYY-MM-DD HH24:MI:SS')"
             return {"oracle": f"TIMESTAMP '{s}'", "postgres": f"TIMESTAMP '{s}'", "cubrid": f"DATETIME '{s}'",
-                    "db2": f"TIMESTAMP '{s}'"}.get(self.name, f"'{s}'")
+                    "db2": f"TIMESTAMP '{s}'", "firebird": f"TIMESTAMP '{s}'"}.get(self.name, f"'{s}'")
         if isinstance(value, date):
             s = value.isoformat()
             if self.name == "altibase":
                 return f"TO_DATE('{s}', 'YYYY-MM-DD')"
-            return f"DATE '{s}'" if self.name in ("oracle", "postgres", "cubrid", "db2") else f"'{s}'"
+            return f"DATE '{s}'" if self.name in ("oracle", "postgres", "cubrid", "db2", "firebird") else f"'{s}'"
         s = str(value).replace("'", "''")
         if self.name in ("mysql", "mariadb"):
             s = s.replace("\\", "\\\\")
@@ -105,6 +108,13 @@ class Dialect:
             return f"IF OBJECT_ID('{name}') IS NOT NULL DROP TABLE {name}"
         if self.name == "altibase":  # no IF EXISTS; a real failure still surfaces at the CREATE TABLE that follows
             return f"BEGIN\n  EXECUTE IMMEDIATE 'DROP TABLE {name} CASCADE';\nEXCEPTION WHEN OTHERS THEN NULL;\nEND;\n/"
+        if self.name == "firebird":  # no IF EXISTS before 6.0; the COMMIT lets the table be re-created
+            return (
+                "SET TERM ^ ;\n"
+                f"EXECUTE BLOCK AS BEGIN\n  IF (EXISTS(SELECT 1 FROM rdb$relations WHERE rdb$relation_name = UPPER('{name}')))"
+                f" THEN EXECUTE STATEMENT 'DROP TABLE {name}';\nEND^\n"
+                "SET TERM ; ^\nCOMMIT;"
+            )
         return f"DROP TABLE IF EXISTS {name};"
 
     # ---- DML ----------------------------------------------------------------
@@ -116,6 +126,9 @@ class Dialect:
             if self.name == "sybase":  # no multi-row VALUES in ASE; UNION ALL is ~100x faster than row-by-row
                 selects = ["SELECT " + ", ".join(self.literal(v) for v in row) for row in chunk]
                 yield f"INSERT INTO {table.name} ({cols})\n" + "\nUNION ALL ".join(selects)
+            elif self.name == "firebird":  # no multi-row VALUES; UNION ALL is ~3x faster than row-by-row
+                selects = ["SELECT " + ", ".join(self.literal(v) for v in row) + " FROM rdb$database" for row in chunk]
+                yield f"INSERT INTO {table.name} ({cols})\n" + "\nUNION ALL ".join(selects) + ";"
             elif self.name == "oracle":
                 body = "\n".join(f"  INTO {table.name} ({cols}) VALUES {v}" for v in values)
                 yield f"INSERT ALL\n{body}\nSELECT 1 FROM dual;"

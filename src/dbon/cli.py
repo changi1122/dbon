@@ -81,7 +81,7 @@ def _guard(fn):
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(package_name="dbon")
 def cli() -> None:
-    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2, altibase)."""
+    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2, altibase, firebird)."""
 
 
 # ---------------------------------------------------------------------------

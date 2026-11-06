@@ -4,7 +4,7 @@
 
 개발/테스트용 DBMS 컨테이너를 Docker Compose로 띄우고, 계정 생성과 더미데이터 적재, 정리까지 한 번에 해주는 CLI입니다.
 
-지원: Oracle(11/19/21/23), PostgreSQL(13-18), MySQL(5.7/8.0/8.4/9), MariaDB(10.6/10.11/11.4/11.8), SQL Server(2019/2022/2025), CUBRID(11.0-11.4), SAP ASE/Sybase(16.0), IBM Db2(11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition(7.3, 비상업적 용도 전용)
+지원: Oracle(11/19/21/23), PostgreSQL(13-18), MySQL(5.7/8.0/8.4/9), MariaDB(10.6/10.11/11.4/11.8), SQL Server(2019/2022/2025), CUBRID(11.0-11.4), SAP ASE/Sybase(16.0), IBM Db2(11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition(7.3, 비상업적 용도 전용), Firebird(3/4/5)
 
 자세한 설계는 [SPEC.md](SPEC.md)를 참고하세요.
 
@@ -129,6 +129,7 @@ dbon up sybase                     # SAP ASE 16.0 (이미지 약 9GB, amd64)
 dbon up db2                        # IBM Db2 11.5.8.0 (이미지 약 4GB, privileged 실행)
 dbon up db2:12.1.5.0               # IBM Db2 12.1.5.0 (이미지 약 7GB, privileged 실행)
 dbon up altibase                   # Altibase A+ Edition 7.3 (이미지 약 6GB, amd64, 비상업적 용도 전용)
+dbon up firebird                   # Firebird 5
 dbon ls                            # 목록/상태
 dbon info mysql84                  # 접속 정보, JDBC URL
 dbon shell mysql84 [--admin]       # 컨테이너 안의 mysql/psql/sqlplus/sqlcmd/csql/isql/db2 접속
