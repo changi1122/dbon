@@ -310,3 +310,11 @@ def test_altibase_error_detection():
     assert not runner._has_error("altibase", "iSQL> SELECT '[ERR-' FROM dual;\n1 row selected.\n")
     assert runner._failure_excerpt("altibase", out).startswith("[ERR-31031")
     assert not runner._has_error("mysql", out)
+
+
+def test_extra_env_in_compose():
+    inst = make("mssql", "2019")
+    inst.extra["env"] = {"MSSQL_COLLATION": "Korean_Wansung_CI_AS"}
+    env = engines.get("mssql").compose(inst)["services"]["db"]["environment"]
+    assert env["MSSQL_COLLATION"] == "Korean_Wansung_CI_AS"
+    assert env["ACCEPT_EULA"] == "Y"  # engine defaults are kept

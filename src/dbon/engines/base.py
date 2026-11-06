@@ -72,7 +72,7 @@ class Engine:
             "dbon.engine": self.name,
             "dbon.version": inst.version,
         }
-        env = {"TZ": inst.timezone, **self.environment(inst)}
+        env = {"TZ": inst.timezone, **self.environment(inst), **inst.extra.get("env", {})}
         service: dict[str, Any] = {
             "image": inst.image,
             "container_name": inst.container,

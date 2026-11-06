@@ -110,8 +110,10 @@ def engines_cmd() -> None:
 @click.option("--mem-limit", help="Memory limit (e.g., 4g)")
 @click.option("--timeout", type=int, help="Readiness timeout in seconds")
 @click.option("--no-wait", is_flag=True, help="Start the container without waiting for readiness or bootstrapping (complete later with dbon start)")
+@click.option("--env", "env_vars", multiple=True, metavar="KEY=VALUE",
+              help="Extra container environment variable (repeatable), e.g. MSSQL_COLLATION=Korean_Wansung_CI_AS")
 @_guard
-def up(target, name, port, image, user, password, admin_password, database, rows, seed_value, mem_limit, timeout, no_wait):
+def up(target, name, port, image, user, password, admin_password, database, rows, seed_value, mem_limit, timeout, no_wait, env_vars):
     """Create and start a new instance. TARGET examples: oracle, mysql:8.0, pg:16, mssql:2022, cubrid:11.4"""
     engine, version = engines.parse_target(target)
     cfg = config.load_config()
@@ -141,6 +143,11 @@ def up(target, name, port, image, user, password, admin_password, database, rows
         user=s["user"], password=s["password"], admin_password=s["admin_password"], database=s["database"],
         timezone=s["timezone"], restart=s["restart"], mem_limit=s["mem_limit"], timeout=s["timeout"], rows=s["rows"],
     )
+    for item in env_vars:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            _fail(f"--env must be KEY=VALUE: {item}")
+        inst.extra.setdefault("env", {})[key] = value
     click.echo(f"[{name}] {engine.label} {version} ({image}) → localhost:{port}")
     engine.prepare(inst)
     _notify_first_use(engine)
