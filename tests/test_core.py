@@ -212,6 +212,10 @@ def test_db2_engine():
     assert svc["environment"]["DBNAME"] == "testdb"
     assert eng.jdbc_url(inst) == "jdbc:db2://localhost:12345/testdb"
     assert eng.spec("latest") == {"image": "ibmcom/db2:latest", "volume_path": "/database"}
+    assert eng.spec("11.5.8.0")["image"] == "ibmcom/db2:11.5.8.0"
+    assert eng.spec("12.1.5.0") == {"image": "icr.io/db2_community/db2:12.1.5.0", "volume_path": "/database"}
+    assert make("db2", "12.1.5.0").image == "icr.io/db2_community/db2:12.1.5.0"
+    assert eng.default_version == "11.5.8.0"
 
 
 def test_db2_exec_uses_instance_owner_and_utf8_client():

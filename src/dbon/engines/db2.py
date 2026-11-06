@@ -37,10 +37,14 @@ class Db2(Engine):
     base_image = "ibmcom/db2"
     dialect = "db2"
     probe_sql = "VALUES 1;"
-    versions = {v: {"image": f"ibmcom/db2:{v}"} for v in ("11.5.4.0", "11.5.5.1", "11.5.8.0")}
+    versions = {
+        **{v: {"image": f"ibmcom/db2:{v}"} for v in ("11.5.4.0", "11.5.5.1", "11.5.8.0")},
+        # ibmcom/db2 stopped at 11.5.8.0; IBM publishes newer releases on icr.io only
+        "12.1.5.0": {"image": "icr.io/db2_community/db2:12.1.5.0"},
+    }
     ready_marker = "Setup has completed."
     first_use_notice = (
-        "Notice: Db2 runs under the IBM Db2 Community Edition license (https://hub.docker.com/r/ibmcom/db2).\n"
+        "Notice: Db2 runs under the IBM Db2 Community Edition license (see /licenses in the image).\n"
         "dbon sets LICENSE=accept for the container; by using Db2 through dbon you agree to that license."
     )
 
@@ -61,7 +65,6 @@ class Db2(Engine):
             "LICENSE": "accept",
             "DB2INST1_PASSWORD": inst.admin_password,
             "DBNAME": inst.database,
-            "TO_CREATE_SAMPLEDB": "false",
             "ARCHIVE_LOGS": "false",
         }
 

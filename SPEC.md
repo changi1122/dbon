@@ -17,7 +17,7 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
 | `mssql` (`ms-sql`, `sqlserver`) | 2019, **2022**, 2025 | `mcr.microsoft.com/mssql/server:<ver>-latest` | 1433 | `sa` |
 | `cubrid` | 11.0, 11.2, 11.3, **11.4** | `cubrid/cubrid:<ver>` | 33000 (broker) | `dba` |
 | `sybase` (`ase`, `sybase-ase`) | **16.0** | `datagrip/sybase:16.0` (ASE 16.0 SP02 Developer Edition, amd64, 약 9GB) | 5000 | `sa` |
-| `db2` | 11.5.4.0, 11.5.5.1, **11.5.8.0** | `ibmcom/db2:<ver>` (Community Edition, privileged, 약 4GB) | 50000 | `db2inst1` |
+| `db2` | 11.5.4.0, 11.5.5.1, **11.5.8.0**, 12.1.5.0 | 11.5: `ibmcom/db2:<ver>` (약 4GB), 12.1: `icr.io/db2_community/db2:<ver>` (약 7GB). Community Edition, privileged | 50000 | `db2inst1` |
 | `altibase` (`alti`) | **7.3** | `altibase/a_plus_edition:<ver>` (A+ Edition, **비상업적 용도 전용**, amd64, 약 6GB) | 20300 | `sys` |
 
 - 표에 없는 버전도 `engine:<tag>` 로 지정하면 `<기본 이미지>:<tag>` 로 시도한다 (oracle 제외). `--image` 로 이미지를 직접 지정할 수도 있다.
@@ -28,7 +28,7 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
   - cubrid 데이터 경로는 이미지의 `CUBRID_DATABASES` 환경변수를 조회해 결정 (11.0=`/var/lib/cubrid`, 11.4=`/home/cubrid/CUBRID/databases`)
   - oracle 서비스명: 11=`XE`, 19=`ORCL`(non-CDB), 21=`XEPDB1`, 23=`FREEPDB1`
   - mssql sqlcmd: `/opt/mssql-tools18/bin/sqlcmd -C` 우선, 없으면 `/opt/mssql-tools/bin/sqlcmd`
-  - db2: 데이터 경로 `/database`, DB명 최대 8자, 앱 계정으로 `db2inst1`·`db2fenc1`·`root` 사용 불가. `/hadr` 는 이미지가 선언한 익명 볼륨이며 `dbon rm` 시 함께 삭제된다.
+  - db2: 표에 없는 태그는 `ibmcom/db2:<tag>` 로 시도한다. 11.5.8.0 이후 태그는 icr.io 에만 있으므로 `--image` 로 지정한다. 데이터 경로 `/database`, DB명 최대 8자, 앱 계정으로 `db2inst1`·`db2fenc1`·`root` 사용 불가. `/hadr` 는 이미지가 선언한 익명 볼륨이며 `dbon rm` 시 함께 삭제된다.
     이미지가 초기화 중 서버를 재시작하므로, 현재 기동 이후 로그의 `Setup has completed.` 를 확인한 뒤 접속을 시도한다.
 - db2 라이선스: `LICENSE=accept` 를 compose에 자동 설정한다. 최초 `dbon up db2` 때만 dbon을 통한 사용이 IBM 라이선스 동의임을 CLI로 안내한다 (`~/.dbon/notices/db2` 로 표시, `rm`/`prune` 후에도 유지).
   - altibase: 이미지에 내장된 DB(`mydb`, UTF8)를 사용하므로 `--database`, `DB_CHARSET` 은 적용되지 않는다. 데이터는 `dbs`, `logs` 두 경로라 볼륨도 `dbon-<name>_data`, `dbon-<name>_logs` 2개다.
@@ -185,4 +185,4 @@ tests/                        # pytest: compose 생성, 방언 SQL, 설정 병�
 - SSL 강제, EUC-KR 등 비 UTF-8 문자셋 프리셋
 - sybase 15.7(`datagrip/sybase:15.7`), Sybase IQ
 - 그 외 추가 엔진 (엔진 모듈 추가로 확장 가능한 구조)
-- db2 `icr.io/db2_community/db2` (IBM의 현행 배포 경로, `ibmcom/db2` 는 2022-10 이후 갱신 없음. `--image` 로 시도 가능하나 미검증)
+- db2 12.1.5.0 외의 icr.io 태그 (11.5.9.0, 12.1.0.0~12.1.4.0, `--image` 로 시도 가능하나 미검증)
