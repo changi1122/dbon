@@ -4,7 +4,7 @@
 
 A CLI that uses Docker Compose to launch DBMS containers for development and testing, create database accounts, load dummy data, and clean up resources in one go.
 
-**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), SAP ASE/Sybase (16.0), IBM Db2 (11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition (7.3; non-commercial use only), Firebird (3/4/5), and SAP IQ/Sybase IQ (16.1; evaluation edition).
+**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), SAP ASE/Sybase (16.0), IBM Db2 (11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition (7.3; non-commercial use only), Firebird (3/4/5), SAP IQ/Sybase IQ (16.1; evaluation edition), and SAP HANA, express edition (2.0 SPS03).
 
 See [SPEC.md](SPEC.md) for the detailed design specification.
 
@@ -131,9 +131,10 @@ dbon up db2:12.1.5.0                      # IBM Db2 12.1.5.0 (image is approxima
 dbon up altibase                          # Altibase A+ Edition 7.3 (image is approximately 6 GB; amd64; non-commercial use only)
 dbon up firebird                          # Firebird 5
 dbon up sybaseiq                          # SAP IQ (Sybase IQ) 16.1 (community image, approximately 7.5 GB; amd64; evaluation license)
+dbon up hana                              # SAP HANA, express edition 2.0 (installs on first start, about 15 minutes; amd64; needs about 10 GB of memory)
 dbon ls                                   # List instances and their status
 dbon info mysql84                         # Show connection details and JDBC URL
-dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql/db2/dbisql inside the container
+dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql/db2/dbisql/hdbsql inside the container
 dbon sql mysql84 ./my.sql                 # Execute an SQL file
 dbon seed mysql84 --rows 5000             # Regenerate dummy data
 dbon stop mysql84                         # Stop the container while preserving data
@@ -162,6 +163,20 @@ SAP does not publish an IQ image, so dbon uses the community image `baeghaeun/sy
 The database bundled in the image has an expired evaluation license, so on first start dbon creates a new UTF-8 database named after `--database`, which starts a new evaluation period. Once that period ends, the server no longer starts (`No SYSAM License Available` in `dbon logs`); recreate the instance with `dbon rm` and `dbon up` to continue, which deletes its data. The CLI reminds you of this on your first `dbon up sybaseiq`.
 
 IQ dbspaces do not grow on their own: the main store is 500 MB and the temporary store 200 MB. Set larger sizes (in MB) when creating the instance, for example `dbon up sybaseiq --env DBON_IQ_SIZE=2000 --env DBON_IQ_TEMP_SIZE=500`. Passwords cannot contain `;`.
+
+### SAP HANA, express edition
+
+The official HANA express image does not run on Docker Desktop for Windows, so dbon uses the community image `muxob/hana-express`. The image does not contain HANA itself: the first start of an instance downloads the SAP HANA, express edition 2.0 SPS03 installer (1.5 GB) from SAP's CDN and installs it, which takes about 10 minutes plus the download and needs about 10 GB of memory for Docker. The installer is kept in the shared volume `dbon-hana-installer`, so later instances skip the download; `dbon prune` removes it. The CLI reminds you of this on your first `dbon up hana`.
+
+dbon uses the `HXE` tenant database (SQL port 39015), so `--database` has no effect; the app user works in its own schema. HANA has stricter password rules than the other engines: the admin (`SYSTEM`) password needs at least 8 characters with an uppercase letter, a lowercase letter, and a digit, and the app password at least 6 characters with a lowercase letter. A new `~/.dbon/config.yaml` sets suitable defaults under `engines.hana`; if your config file was created before HANA support, add this section or pass `--password` and `--admin-password`:
+
+```yaml
+engines:
+  hana:
+    password: dbon1234!
+    admin_password: DBon0000!
+    timeout: 1800
+```
 
 ## Account configuration
 

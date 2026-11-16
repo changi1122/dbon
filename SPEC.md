@@ -21,6 +21,7 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
 | `altibase` (`alti`) | **7.3** | `altibase/a_plus_edition:<ver>` (A+ Edition, **비상업적 용도 전용**, amd64, 약 6GB) | 20300 | `sys` |
 | `firebird` (`fb`) | 3, 4, **5** | `firebirdsql/firebird:<ver>` (3, 4는 amd64 전용) | 3050 | `SYSDBA` |
 | `sybaseiq` (`iq`, `sapiq`, `sybase-iq`, `sap-iq`) | **16.1** | `baeghaeun/sybase_iq:<ver>` (커뮤니티 이미지, SAP IQ 16.1 평가판, amd64, 약 7.5GB) | 2638 | `DBA` |
+| `hana` (`hxe`, `saphana`, `sap-hana`, `hana-express`) | **2.0** | `muxob/hana-express:latest` (커뮤니티 이미지, 최초 기동 시 HANA express 2.0 SPS03 설치, amd64, 메모리 약 10GB) | 39015 (tenant HXE) | `SYSTEM` |
 
 - 표에 없는 버전도 `engine:<tag>` 로 지정하면 `<기본 이미지>:<tag>` 로 시도한다 (oracle 제외). `--image` 로 이미지를 직접 지정할 수도 있다.
 - 버전별 차이(볼륨 경로, PDB 서비스명, sqlcmd 경로 등)는 엔진 모듈에서 흡수한다.
@@ -45,6 +46,14 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
     평가 기간이 끝나 기동에 실패하면 자동 재생성하지 않고 로그에 `dbon rm` 후 `dbon up` 하라는 안내만 남긴다 (데이터가 몰래 지워지지 않도록).
     IQ dbspace는 자동 확장되지 않으므로 크기를 환경변수로 받는다: `DBON_IQ_SIZE`(main, 기본 500MB), `DBON_IQ_TEMP_SIZE`(기본 200MB), `DBON_IQ_OPTS`(서버 옵션, 기본 `-iqmc 256 -iqtc 256`). `--env` 로 덮어쓴다.
     `DBA`, `SYS`, `PUBLIC`, `dbo` 등은 앱 계정으로 사용할 수 없고, IQ가 비밀번호의 `;` 를 거부하므로 미리 검사한다.
+  - hana: 공식 이미지(`saplabs/hanaexpress`)는 Windows Docker Desktop에서 동작하지 않아 `muxob/hana-express` 를 쓴다. 이 이미지의 `/start.sh` 는 최초 실행 때 SAP CDN에서 `hxe.tgz`(2.00.033, 1.5GB)를 받아
+    `setup_hxe.sh` 로 설치한 뒤 컨테이너를 종료하고, 이후 실행에서는 `HDB start` 후 `cat` 으로 대기하며 종료 처리가 없다. 그래서 compose `entrypoint` 를 dbon 래퍼로 교체해 설치와 기동을 한 번에 하고 `docker stop` 이면 `HDB stop`(약 30초)으로 정상 종료한다 (`stop_grace_period` 180s).
+    설치 파일은 공유 external 볼륨 `dbon-hana-installer`(`/installer`)에 캐시한다. compose가 만들거나 `down -v` 로 지우지 않도록 external로 두고 `Engine.before_start` 훅(`up`/`start` 직전)에서 `docker volume create` 한다. 받는 중에는 임시 파일에 받고 `gzip -t` 통과 후 이름을 바꿔 동시 다운로드나 중단에 안전하다.
+    설치 결과는 볼륨 2개(`/hana/shared` = `dbon-<name>_data`, `/usr/sap` = `dbon-<name>_sap`)에 들어가지만 OS 계정(`hxeadm`, `sapadm`, `sapsys`, `hxeshm`)과 `/etc` 일부 파일은 볼륨 밖이라, 설치 후 볼륨(`/hana/shared/.dbon_etc`)에 저장해 두고 컨테이너가 재생성되면 복원한다. 설치 완료 표시는 `/hana/shared/.dbon_installed`.
+    설치가 호스트 이름에 묶이므로 compose `hostname: hxehost` 로 고정한다. 설치 프로그램은 설치 도중에 DB를 띄우므로 healthcheck가 설치 완료 표시도 확인한다 (`start_period` 1800s).
+    tenant DB `HXE`(SQL 포트 39015)만 쓰므로 `--database` 는 적용되지 않는다 (tenant 추가는 express edition 메모리로 감당하기 어렵다). `SYSTEM`, `SYS`, `_SYS*` 는 앱 계정으로 사용할 수 없다.
+    설치 마스터 비밀번호 규칙(8자 이상, 대문자·소문자·숫자)과 정책을 최대한 푼 뒤의 앱 비밀번호 규칙(6자 이상, 소문자)을 미리 검사한다. 기본 설정 파일에 `engines.hana`(password `dbon1234!`, admin_password `DBon0000!`, timeout 1800)를 둔다.
+- hana 라이선스: 비공식 커뮤니티 이미지이고 SAP CDN에서 받아 설치하므로, 최초 `dbon up hana` 때만 다운로드·설치 시간과 메모리, SAP 라이선스 동의로 간주됨을 CLI로 안내한다 (`~/.dbon/notices/hana`).
 - sybaseiq 라이선스: 비공식 커뮤니티 이미지이고 SAP IQ 평가판이므로, 최초 `dbon up sybaseiq` 때만 평가 기간 만료 시 재생성이 필요하다는 점과 SAP 라이선스 동의로 간주됨을 CLI로 안내한다 (`~/.dbon/notices/sybaseiq`).
 - altibase 라이선스: A+ Edition EULA는 사용권을 비상업적 용도로 제한한다. 최초 `dbon up altibase` 때만 이 제한과 사용 시 동의로 간주됨을 CLI로 안내한다 (`~/.dbon/notices/altibase`).
 
@@ -85,6 +94,10 @@ engines:
     timeout: 1800         # 준비 대기 시간(초)
   mssql:
     admin_password: DBon0000!   # SA 비밀번호 복잡도 정책 충족 필요
+  hana:
+    password: dbon1234!         # HANA 비밀번호 규칙 충족 필요 (6자 이상, 소문자)
+    admin_password: DBon0000!   # 설치 마스터 비밀번호 (8자 이상, 대문자·소문자·숫자)
+    timeout: 1800               # 최초 기동 시 설치 포함
     versions:
       "2019":
         mem_limit: 2g
@@ -112,6 +125,7 @@ engines:
    - cubrid: DB는 컨테이너 환경변수(`CUBRID_DB`)로 생성됨. 공식 이미지가 dba 비밀번호를 설정하지 않으므로 dba 비밀번호 설정 + 앱 사용자 생성 (별도 이미지 빌드 불필요)
    - firebird: 이미지가 환경변수로 앱 사용자와 DB를 만들고 앱 사용자를 DB 소유자로 지정하므로 추가 작업 없음
    - altibase: 앱 사용자 생성 (이미 있으면 비밀번호만 변경), sys 비밀번호를 `manager` 에서 변경
+   - hana: tenant `HXE` 의 비밀번호 정책을 푼 뒤(`minimal_password_length` 6 — 이보다 작게는 거부됨, `password_layout` `a`, 최초 변경 강제 해제), 앱 사용자를 생성(있으면 비밀번호 변경)하고 앱 사용자의 비밀번호 만료를 끈다 (`SYSTEM` 은 설치 시 이미 꺼져 있다). 앱 사용자는 자기 이름의 스키마를 쓴다
    - sybaseiq: DB와 DBA 비밀번호는 entrypoint가 만들 때 정해지므로, `GRANT CONNECT … IDENTIFIED BY`(사용자 생성/비밀번호 변경, 멱등) + `SYS_AUTH_RESOURCE_ROLE` 부여만 한다
    - db2: DB는 컨테이너 환경변수(`DBNAME`)로 생성됨. `CONNECT, CREATETAB, BINDADD, IMPLICIT_SCHEMA` + USERSPACE1 사용 권한 부여.
      Db2 계정은 컨테이너의 OS 사용자이고 볼륨에 저장되지 않으므로, 앱 OS 계정은 부트스트랩이 아니라 **준비가 끝날 때마다** root로 멱등하게 생성·동기화한다 (`Engine.on_ready`, 컨테이너 재생성 대비)
@@ -119,7 +133,7 @@ engines:
 7. 접속 정보(호스트/포트/계정/JDBC URL) 출력
 
 SQL 실행 방식: 파이썬이 엔진 방언 SQL 파일을 생성 → `docker cp` 로 컨테이너에 복사 → 컨테이너 내 CLI로 실행
-(`sqlplus`, `psql`, `mysql`, `mariadb`, `sqlcmd`, `csql`, `isql`, `db2`, `dbisql`). 호스트에 DB 드라이버/클라이언트 설치 불필요.
+(`sqlplus`, `psql`, `mysql`, `mariadb`, `sqlcmd`, `csql`, `isql`, `db2`, `dbisql`, `hdbsql`). 호스트에 DB 드라이버/클라이언트 설치 불필요.
 
 db2 CLP 주의점:
 - `db2inst1` OS 사용자로 실행하고, 접속과 스크립트 실행을 같은 셸에서 수행한다 (CLP 연결이 부모 프로세스 단위로 유지됨).
@@ -131,6 +145,12 @@ sybaseiq `dbisql` 주의점:
 - `iq` OS 사용자로 `dbisql -nogui -onerror exit` 를 실행한다. 오류 시 중단하고 0이 아닌 종료 코드를 돌려주며, 경고(예: `TOP` 에 `ORDER BY` 가 없을 때 SQLCODE 122)는 출력만 하고 계속한다.
 - 접속 문자열은 `uid=…;pwd=…;dbn=<database>;eng=dbon_iq;charset=utf-8;links=tcpip{host=127.0.0.1;port=2638}` (서버 이름 없이 TCP로 접속하면 거부된다).
 - 종료 시 자동 커밋되므로(`COMMIT_ON_EXIT`) 스크립트에 `COMMIT` 을 덧붙이지 않는다.
+
+hana `hdbsql` 주의점:
+- `hdbsql -n 127.0.0.1:39015 -d HXE -x -I <file>` 로 실행한다. `-E` 는 쓰지 않는다: `-E` 를 주면 첫 **경고**(예: 동적 DDL 경고 1347)에서 종료 코드 0으로 조용히 멈춰 나머지 문장이 실행되지 않는다.
+  `-E` 없이는 오류에도 끝까지 실행하고 종료 코드 0이므로, 줄 맨 앞의 `* <코드>:` 로 실패를 판정하고(경고는 `Warning: * …` 라 제외) 첫 오류부터 보여 준다 (altibase와 같은 방식).
+- 입력 파일 기본 인코딩이 ASCII라 `-B UTF8`, 출력은 `-resultencoding UTF8` 을 지정한다.
+- `DO BEGIN … END;` 블록 안의 `;` 는 hdbsql이 블록 단위로 처리하므로 구분자를 바꿀 필요가 없다.
 
 altibase `isql` 주의점:
 - SQL 오류에도 종료 코드 0이고 오류 시 중단하는 옵션이 없어 스크립트는 끝까지 실행된다. 줄 맨 앞의 `[ERR-` 로 실패를 판정하고, 오류 메시지에는 출력 끝이 아니라 첫 오류부터 보여 준다.
@@ -147,13 +167,14 @@ altibase `isql` 주의점:
 | `dbon_customer` | N | cust_id PK, cust_name, email, phone, address(한글 주소), grade, reg_date |
 | `dbon_orders` | N | order_id PK, cust_id FK, emp_id FK, order_date, amount, status |
 
-- 타입 매핑: oracle `NUMBER/VARCHAR2(n CHAR)/DATE/TIMESTAMP`, mssql `NVARCHAR/DATETIME2` + `N'..'` 리터럴, mysql/mariadb `DATETIME`, cubrid `DATETIME`, sybase `UNIVARCHAR/UNICHAR/DATETIME`, db2 `VARCHAR(n CODEUNITS32)/CHAR(n CODEUNITS32)/TIMESTAMP(0)`, altibase `NVARCHAR/NCHAR/DATE` + `TO_DATE` 리터럴, firebird `VARCHAR/CHAR/DECIMAL/TIMESTAMP`, sybaseiq `VARCHAR(n×3)/CHAR/DECIMAL/TIMESTAMP` + 따옴표 문자열 날짜 리터럴 등
+- 타입 매핑: oracle `NUMBER/VARCHAR2(n CHAR)/DATE/TIMESTAMP`, mssql `NVARCHAR/DATETIME2` + `N'..'` 리터럴, mysql/mariadb `DATETIME`, cubrid `DATETIME`, sybase `UNIVARCHAR/UNICHAR/DATETIME`, db2 `VARCHAR(n CODEUNITS32)/CHAR(n CODEUNITS32)/TIMESTAMP(0)`, altibase `NVARCHAR/NCHAR/DATE` + `TO_DATE` 리터럴, firebird `VARCHAR/CHAR/DECIMAL/TIMESTAMP`, sybaseiq `VARCHAR(n×3)/CHAR/DECIMAL/TIMESTAMP` + 따옴표 문자열 날짜 리터럴, hana `NVARCHAR/NCHAR/DECIMAL/TIMESTAMP` 등
 - 다건 INSERT: oracle `INSERT ALL … SELECT 1 FROM dual`, mssql 1000건 단위 + `GO`, sybase `INSERT … SELECT … UNION ALL` 200건 단위 + `go`, altibase multi-row `VALUES` 200건 단위 (500건 약 110KB 문장은 실패), 그 외 multi-row `VALUES`
 - sybaseiq 는 IQ main store가 `NCHAR/NVARCHAR`·문자 길이 의미론(`VARCHAR(n CHAR)`)을 지원하지 않아, UTF-8 DB에서 바이트 단위인 `VARCHAR` 길이를 3배로 잡는다. `DROP TABLE IF EXISTS`, multi-row `VALUES`(500건 단위)는 그대로 쓴다
+- hana 는 `DROP TABLE IF EXISTS`(2.0)와 multi-row `VALUES` 미지원이라 테이블 없음(259)을 무시하는 `DO` 블록의 정적 `DROP TABLE … CASCADE` 로 삭제하고 (동적 `EXEC` 는 경고 1347을 낸다), `INSERT … SELECT … FROM DUMMY UNION ALL` 500건 단위로 적재한다
 - altibase 는 `DROP TABLE IF EXISTS` 미지원이라 예외를 무시하는 PSM 블록으로 삭제한다
 - firebird 는 `DROP TABLE IF EXISTS`(5 이하)와 multi-row `VALUES` 미지원이라 `EXECUTE BLOCK` 으로 삭제하고, `INSERT … SELECT … FROM rdb$database UNION ALL` 200건 단위로 적재한다 (한 문장의 컨텍스트 최대 255개)
 - sybase 는 `DROP TABLE IF EXISTS`·문장 끝 `;` 미지원, 컬럼 기본값이 NOT NULL 이므로 nullable 컬럼에 `NULL` 을 명시
-- 문자셋: oracle AL32UTF8, mysql/mariadb utf8mb4, cubrid `en_US.utf8`, mssql NVARCHAR, sybase 서버 문자셋이 iso_1 이라 UNICODE 타입 + `isql -J utf8`, db2 UTF-8 DB + `DB2CODEPAGE=1208`, altibase UTF8 DB + `isql -NLS_USE UTF8`, sybaseiq UTF-8 DB(`UTF8BIN`) + 접속 `charset=utf-8` + `LANG=en_US.UTF-8`(dbisql이 SQL 파일을 JVM 문자셋으로 읽음)
+- 문자셋: oracle AL32UTF8, mysql/mariadb utf8mb4, cubrid `en_US.utf8`, mssql NVARCHAR, sybase 서버 문자셋이 iso_1 이라 UNICODE 타입 + `isql -J utf8`, db2 UTF-8 DB + `DB2CODEPAGE=1208`, altibase UTF8 DB + `isql -NLS_USE UTF8`, sybaseiq UTF-8 DB(`UTF8BIN`) + 접속 `charset=utf-8` + `LANG=en_US.UTF-8`(dbisql이 SQL 파일을 JVM 문자셋으로 읽음), hana 유니코드 DB + `NVARCHAR` + `hdbsql -B UTF8`
 - 외부 라이브러리(Faker) 없이 내장 한글 이름/주소 생성기 사용
 
 ## 7. CLI 명령
@@ -192,7 +213,7 @@ src/dbon/
   runner.py                   # SQL 파일 복사·실행, 준비 대기, 부트스트랩
   engines/
     base.py                   # Engine 추상 클래스 (이미지, compose 서비스, 실행 명령, 부트스트랩 SQL, JDBC)
-    oracle.py postgres.py mysql.py mariadb.py mssql.py cubrid.py sybase.py db2.py altibase.py firebird.py sybaseiq.py
+    oracle.py postgres.py mysql.py mariadb.py mssql.py cubrid.py sybase.py db2.py altibase.py firebird.py sybaseiq.py hana.py
   dummy/
     data.py                   # 랜덤 행 생성 (한글 이름/주소 등)
     dialect.py                # 엔진별 DDL/INSERT 렌더링

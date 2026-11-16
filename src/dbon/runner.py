@@ -52,18 +52,21 @@ def run_sql(
 
 
 _ALTIBASE_ERROR = re.compile(r"^\[ERR-", re.MULTILINE)
+_HANA_ERROR = re.compile(r"^\* -?\d+: ", re.MULTILINE)  # warnings are printed as "Warning: * <code>: ..."
+_ERROR_PATTERNS = {"altibase": _ALTIBASE_ERROR, "hana": _HANA_ERROR}
 
 
 def _has_error(engine: str, output: str) -> bool:
-    # csql and isql (altibase) report statement errors but still exit 0
-    if engine == "altibase":
-        return _ALTIBASE_ERROR.search(output) is not None
+    # csql, isql (altibase) and hdbsql (hana) report statement errors but still exit 0
+    if engine in _ERROR_PATTERNS:
+        return _ERROR_PATTERNS[engine].search(output) is not None
     return engine == "cubrid" and "ERROR:" in output
 
 
 def _failure_excerpt(engine: str, output: str) -> str:
-    # altibase isql keeps running after an error, so the first error can be far from the end of the output
-    match = _ALTIBASE_ERROR.search(output) if engine == "altibase" else None
+    # these clients keep running after an error, so the first error can be far from the end of the output
+    pattern = _ERROR_PATTERNS.get(engine)
+    match = pattern.search(output) if pattern else None
     if match:
         return "\n".join(output[match.start():].splitlines()[:40])
     return _tail(output, 40)

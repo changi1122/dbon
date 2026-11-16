@@ -4,7 +4,7 @@
 
 개발/테스트용 DBMS 컨테이너를 Docker Compose로 띄우고, 계정 생성과 더미데이터 적재, 정리까지 한 번에 해주는 CLI입니다.
 
-지원: Oracle(11/19/21/23), PostgreSQL(13-18), MySQL(5.7/8.0/8.4/9), MariaDB(10.6/10.11/11.4/11.8), SQL Server(2019/2022/2025), CUBRID(11.0-11.4), SAP ASE/Sybase(16.0), IBM Db2(11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition(7.3, 비상업적 용도 전용), Firebird(3/4/5), SAP IQ/Sybase IQ(16.1, 평가판)
+지원: Oracle(11/19/21/23), PostgreSQL(13-18), MySQL(5.7/8.0/8.4/9), MariaDB(10.6/10.11/11.4/11.8), SQL Server(2019/2022/2025), CUBRID(11.0-11.4), SAP ASE/Sybase(16.0), IBM Db2(11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition(7.3, 비상업적 용도 전용), Firebird(3/4/5), SAP IQ/Sybase IQ(16.1, 평가판), SAP HANA express edition(2.0 SPS03)
 
 자세한 설계는 [SPEC.md](SPEC.md)를 참고하세요.
 
@@ -131,9 +131,10 @@ dbon up db2:12.1.5.0               # IBM Db2 12.1.5.0 (이미지 약 7GB, privil
 dbon up altibase                   # Altibase A+ Edition 7.3 (이미지 약 6GB, amd64, 비상업적 용도 전용)
 dbon up firebird                   # Firebird 5
 dbon up sybaseiq                   # SAP IQ (Sybase IQ) 16.1 (커뮤니티 이미지 약 7.5GB, amd64, 평가판 라이선스)
+dbon up hana                       # SAP HANA express edition 2.0 (최초 기동 시 설치, 약 15분, amd64, 메모리 약 10GB 필요)
 dbon ls                            # 목록/상태
 dbon info mysql84                  # 접속 정보, JDBC URL
-dbon shell mysql84 [--admin]       # 컨테이너 안의 mysql/psql/sqlplus/sqlcmd/csql/isql/db2/dbisql 접속
+dbon shell mysql84 [--admin]       # 컨테이너 안의 mysql/psql/sqlplus/sqlcmd/csql/isql/db2/dbisql/hdbsql 접속
 dbon sql mysql84 ./my.sql          # SQL 파일 실행
 dbon seed mysql84 --rows 5000      # 더미데이터 재생성
 dbon stop mysql84                  # 중지(데이터 보존)
@@ -162,6 +163,20 @@ SAP가 IQ 이미지를 배포하지 않으므로 SAP IQ 16.1 평가판이 들어
 이미지에 들어 있는 DB는 평가판 라이선스가 만료되어 있어, 최초 기동 시 `--database` 이름으로 UTF-8 DB를 새로 만들고 이때 평가 기간이 새로 시작됩니다. 평가 기간이 끝나면 서버가 기동하지 않으므로(`dbon logs`에 `No SYSAM License Available`) `dbon rm` 후 `dbon up`으로 인스턴스를 다시 만들어야 하며, 데이터는 삭제됩니다. 최초 `dbon up sybaseiq` 때 CLI에서 한 번 안내합니다.
 
 IQ dbspace는 자동으로 늘어나지 않습니다. 기본 크기는 main 500MB, temporary 200MB이며, 생성할 때 `dbon up sybaseiq --env DBON_IQ_SIZE=2000 --env DBON_IQ_TEMP_SIZE=500`처럼 MB 단위로 늘릴 수 있습니다. 비밀번호에 `;`는 쓸 수 없습니다.
+
+### SAP HANA express edition
+
+공식 HANA express 이미지는 Windows Docker Desktop에서 동작하지 않아 커뮤니티 이미지 `muxob/hana-express`를 사용합니다. 이 이미지에는 HANA가 들어 있지 않아서, 인스턴스를 처음 기동할 때 SAP CDN에서 SAP HANA express edition 2.0 SPS03 설치 파일(1.5GB)을 받아 설치합니다. 설치에 약 10분(다운로드 별도)이 걸리고 Docker에 약 10GB의 메모리가 필요합니다. 설치 파일은 공유 볼륨 `dbon-hana-installer`에 보관하므로 이후 인스턴스는 다운로드를 건너뛰며, `dbon prune` 시 함께 삭제됩니다. 최초 `dbon up hana` 때 CLI에서 한 번 안내합니다.
+
+dbon은 tenant DB `HXE`(SQL 포트 39015)를 사용하므로 `--database`는 적용되지 않고, 앱 계정은 자기 스키마에서 작업합니다. HANA는 비밀번호 규칙이 엄격해서 관리자(`SYSTEM`) 비밀번호는 8자 이상에 대문자·소문자·숫자를, 앱 비밀번호는 6자 이상에 소문자를 포함해야 합니다. 새로 만들어지는 `~/.dbon/config.yaml`에는 `engines.hana`에 맞는 기본값이 들어 있습니다. HANA 지원 이전에 만들어진 설정 파일이라면 아래 섹션을 추가하거나 `--password`, `--admin-password`를 지정하세요.
+
+```yaml
+engines:
+  hana:
+    password: dbon1234!
+    admin_password: DBon0000!
+    timeout: 1800
+```
 
 ## 계정 설정
 

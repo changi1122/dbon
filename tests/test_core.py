@@ -158,6 +158,8 @@ def test_render_script(dialect):
         assert "EXECUTE IMMEDIATE 'DROP TABLE dbon_orders CASCADE'" in sql and "IF EXISTS" not in sql
     elif dialect == "firebird":
         assert "EXECUTE STATEMENT 'DROP TABLE dbon_orders'" in sql and "IF EXISTS" not in sql
+    elif dialect == "hana":
+        assert "  DROP TABLE dbon_orders CASCADE;" in sql and "IF EXISTS" not in sql
     else:
         assert "DROP TABLE IF EXISTS dbon_orders;" in sql
     if dialect == "mssql":
@@ -310,6 +312,14 @@ def test_altibase_rejects_reserved_user():
         engines.get("altibase").prepare(inst)
 
 
+def test_hana_error_detection():
+    warning = "Warning: * 1347: Not recommended feature SQLSTATE: HY000\n"
+    out = warning + "* 259: invalid table name: NOPE SQLSTATE: HY000\nok\n"
+    assert runner._has_error("hana", out)
+    assert not runner._has_error("hana", warning)
+    assert runner._failure_excerpt("hana", out).startswith("* 259:")
+
+
 def test_altibase_error_detection():
     out = "iSQL> SELECT 1;\n[ERR-31031 : Table or view was not found]\n" + "iSQL> more\n" * 100
     assert runner._has_error("altibase", out)
@@ -424,6 +434,67 @@ def test_sybaseiq_rejects(field, value):
     setattr(inst, field, value)
     with pytest.raises(engines.EngineError):
         engines.get("sybaseiq").prepare(inst)
+
+
+# ---- hana ---------------------------------------------------------------------
+def test_hana_dialect():
+    sql = render("hana", 1200, seed=1)
+    assert "emp_name NVARCHAR(50) NOT NULL" in sql and "gender NCHAR(1)" in sql
+    assert "created_at TIMESTAMP" in sql
+    assert sql.count("INSERT INTO dbon_emp ") == 3
+    assert "FROM DUMMY\nUNION ALL SELECT" in sql and "VALUES" not in sql
+    assert sql.count("DO BEGIN") == 4
+    assert Dialect("hana").literal(date(2024, 1, 2)) == "DATE '2024-01-02'"
+    assert Dialect("hana").literal(datetime(2024, 1, 2, 3, 4, 5)) == "TIMESTAMP '2024-01-02 03:04:05'"
+
+
+def test_hana_config_defaults():
+    s = config.resolve_settings(config.load_config(), "hana", "2.0")
+    assert s["admin_password"] == "DBon0000!" and s["password"] == "dbon1234!" and s["timeout"] == 1800
+
+
+def test_hana_engine():
+    eng = engines.get("hxe")
+    assert all(engines.get(a) is eng for a in ("hana", "saphana", "sap-hana", "hana-express"))
+    inst = make("hana")
+    assert inst.database == "HXE"
+    doc = eng.compose(inst)
+    svc = doc["services"]["db"]
+    assert svc["image"] == "muxob/hana-express:latest"
+    assert svc["volumes"] == ["data:/hana/shared", "sap:/usr/sap", "installer:/installer"]
+    assert doc["volumes"]["installer"] == {"external": True, "name": "dbon-hana-installer"}
+    assert doc["volumes"]["sap"]["labels"]["dbon.instance"] == "t"
+    assert svc["hostname"] == "hxehost" and svc["init"] is True
+    assert "$$DBON_MASTER_PASSWORD" in svc["entrypoint"][2]
+    assert svc["environment"]["DBON_MASTER_PASSWORD"] == inst.admin_password
+    assert ".dbon_installed" in svc["healthcheck"]["test"][1]
+    assert eng.jdbc_url(inst) == "jdbc:sap://localhost:12345/"
+    assert eng.database_label(inst) == "HXE"
+    boot = eng.bootstrap_sql(inst, inst.admin_password)
+    assert f'CREATE USER dbon PASSWORD "{inst.password}" NO FORCE_FIRST_PASSWORD_CHANGE' in boot
+    assert "ALTER USER dbon DISABLE PASSWORD LIFETIME;" in boot
+
+
+def test_hana_exec():
+    eng = engines.get("hana")
+    inst = make("hana")
+    spec = eng.exec_sql(inst, "/tmp/x.sql", admin=False)
+    assert "-n 127.0.0.1:39015 -d HXE" in spec.cmd[2]
+    assert spec.cmd[-3:] == ["-x", "-I", "/tmp/x.sql"] and "-E" not in spec.cmd
+    assert spec.env == {"DBON_U": "dbon", "DBON_P": inst.password}
+    admin = eng.exec_sql(inst, "/tmp/x.sql", admin=True, admin_password="Other123")
+    assert admin.env == {"DBON_U": "SYSTEM", "DBON_P": "Other123"}
+
+
+@pytest.mark.parametrize("field,value", [
+    ("user", "system"), ("user", "_SYS_X"), ("admin_password", "dbon0000!"), ("admin_password", "Short1"),
+    ("password", "dbon!"), ("password", "DBON1234"),
+])
+def test_hana_rejects(field, value):
+    inst = make("hana")
+    setattr(inst, field, value)
+    with pytest.raises(engines.EngineError):
+        engines.get("hana").prepare(inst)
 
 
 def test_extra_env_in_compose():

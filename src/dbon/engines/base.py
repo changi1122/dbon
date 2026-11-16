@@ -65,6 +65,9 @@ class Engine:
     def service_extras(self, inst: Instance) -> dict[str, Any]:
         return {}
 
+    def before_start(self, inst: Instance) -> None:
+        """Hook run before `docker compose up` (e.g. to create shared external volumes)."""
+
     def compose(self, inst: Instance) -> dict[str, Any]:
         labels = {
             "dbon.managed": "true",

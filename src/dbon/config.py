@@ -34,6 +34,10 @@ engines:
     timeout: 600
   db2:
     timeout: 900
+  hana:                   # SAP HANA password rules; the first start installs HANA (~10 min)
+    password: dbon1234!
+    admin_password: DBon0000!
+    timeout: 1800
 """
 
 BUILTIN_DEFAULTS: dict[str, Any] = {
