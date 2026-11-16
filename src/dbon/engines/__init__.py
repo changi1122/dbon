@@ -10,8 +10,9 @@ from dbon.engines.mysql import MariaDB, MySQL
 from dbon.engines.oracle import Oracle
 from dbon.engines.postgres import Postgres
 from dbon.engines.sybase import Sybase
+from dbon.engines.sybaseiq import SybaseIQ
 
-ENGINES: dict[str, Engine] = {e.name: e for e in (Oracle(), Postgres(), MySQL(), MariaDB(), MSSQL(), Cubrid(), Sybase(), Db2(), Altibase(), Firebird())}
+ENGINES: dict[str, Engine] = {e.name: e for e in (Oracle(), Postgres(), MySQL(), MariaDB(), MSSQL(), Cubrid(), Sybase(), Db2(), Altibase(), Firebird(), SybaseIQ())}
 
 _ALIASES = {alias: e for e in ENGINES.values() for alias in (e.name, *e.aliases)}
 

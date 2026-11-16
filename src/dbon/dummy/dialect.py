@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from dbon.dummy.data import Column, Table, generate
 
-DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2", "altibase", "firebird")
+DIALECTS = ("oracle", "postgres", "mysql", "mariadb", "mssql", "cubrid", "sybase", "db2", "altibase", "firebird", "sybaseiq")
 
 _TYPES = {
     "oracle": {"int": "NUMBER(10)", "varchar": "VARCHAR2({0} CHAR)", "char": "CHAR({0} CHAR)",
@@ -32,6 +32,9 @@ _TYPES = {
                  "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP"},
     "altibase": {"int": "INTEGER", "varchar": "NVARCHAR({0})", "char": "NCHAR({0})",
                  "decimal": "NUMERIC({0},{1})", "date": "DATE", "timestamp": "DATE"},
+    # the IQ main store has no NCHAR/NVARCHAR or character-length semantics: VARCHAR(n) counts UTF-8 bytes
+    "sybaseiq": {"int": "INTEGER", "varchar": "VARCHAR({0})", "char": "CHAR({0})",
+                 "decimal": "DECIMAL({0},{1})", "date": "DATE", "timestamp": "TIMESTAMP"},
 }
 _TYPES["mariadb"] = _TYPES["mysql"]
 
@@ -73,7 +76,10 @@ class Dialect:
 
     # ---- DDL ----------------------------------------------------------------
     def column_type(self, col: Column) -> str:
-        return _TYPES[self.name][col.type].format(*col.size)
+        size = col.size
+        if self.name == "sybaseiq" and col.type == "varchar":
+            size = (size[0] * 3,)  # room for 3-byte UTF-8 characters such as Korean
+        return _TYPES[self.name][col.type].format(*size)
 
     def create_table(self, table: Table) -> str:
         lines = []

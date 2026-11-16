@@ -81,7 +81,7 @@ def _guard(fn):
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(package_name="dbon")
 def cli() -> None:
-    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2, altibase, firebird)."""
+    """Dev/Test DBMS container management tool (oracle, postgres, mysql, mariadb, mssql, cubrid, sybase, db2, altibase, firebird, sybaseiq)."""
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def sql_cmd(name, file, admin):
 @click.option("--admin", is_flag=True, help="Connect using the administrator account")
 @_guard
 def shell(name, admin):
-    """Open a DB CLI session inside the container (sqlplus/psql/mysql/sqlcmd/csql/isql/db2)."""
+    """Open a DB CLI session inside the container (sqlplus/psql/mysql/sqlcmd/csql/isql/db2/dbisql)."""
     inst = _load(name)
     spec = engines.get(inst.engine).shell(inst, admin=admin)
     sys.exit(docker.exec_interactive(inst.container, spec.cmd, user=spec.user, env=spec.env))

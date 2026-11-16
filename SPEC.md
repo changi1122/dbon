@@ -20,6 +20,7 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
 | `db2` | 11.5.4.0, 11.5.5.1, **11.5.8.0**, 12.1.5.0 | 11.5: `ibmcom/db2:<ver>` (약 4GB), 12.1: `icr.io/db2_community/db2:<ver>` (약 7GB). Community Edition, privileged | 50000 | `db2inst1` |
 | `altibase` (`alti`) | **7.3** | `altibase/a_plus_edition:<ver>` (A+ Edition, **비상업적 용도 전용**, amd64, 약 6GB) | 20300 | `sys` |
 | `firebird` (`fb`) | 3, 4, **5** | `firebirdsql/firebird:<ver>` (3, 4는 amd64 전용) | 3050 | `SYSDBA` |
+| `sybaseiq` (`iq`, `sapiq`, `sybase-iq`, `sap-iq`) | **16.1** | `baeghaeun/sybase_iq:<ver>` (커뮤니티 이미지, SAP IQ 16.1 평가판, amd64, 약 7.5GB) | 2638 | `DBA` |
 
 - 표에 없는 버전도 `engine:<tag>` 로 지정하면 `<기본 이미지>:<tag>` 로 시도한다 (oracle 제외). `--image` 로 이미지를 직접 지정할 수도 있다.
 - 버전별 차이(볼륨 경로, PDB 서비스명, sqlcmd 경로 등)는 엔진 모듈에서 흡수한다.
@@ -36,6 +37,15 @@ DBMS 종류/버전별로 Docker Compose 기반 컨테이너를 한 줄 명령으
     이미지의 `docker-entrypoint.sh` 는 `docker stop` 후 재기동하면 `checkServer` 가 오류(-19)로 종료되어 컨테이너가 살아나지 않으므로, compose `entrypoint` 를 dbon 래퍼로 교체한다 (`server start` + `docker stop` 시 `shutdown immediate`).
     sys 비밀번호를 바꾼 뒤에는 기동 로그에 `ERR-4102E` 가 한 줄 찍히지만 기동에는 영향이 없다. 비밀번호는 대소문자를 구분하지 않는다. `sys`, `system_` 은 앱 계정으로 사용할 수 없다.
   - firebird: 데이터 경로 `/var/lib/firebird/data`, DB 파일 `<database>.fdb`. 사용자 정보는 볼륨 밖 security DB에 있지만 이미지가 기동할 때마다 `FIREBIRD_ROOT_PASSWORD`, `FIREBIRD_USER` 를 다시 적용하므로 컨테이너를 재생성해도 복구된다. `sysdba` 는 앱 계정으로 사용할 수 없다.
+  - sybaseiq: 이미지 내장 `iqdemo` DB는 평가판 라이선스가 만료되어 기동하지 않고(`No SYSAM License Available`), 이미지 설명의 재생성 절차(`mkiqdemo.sh`)는 대화형이다.
+    그래서 compose `entrypoint` 를 dbon 래퍼로 교체한다: 볼륨(`/home/iq/data`)에 `.dbon_created` 표시가 없으면 임시 utility 서버(`dbon_util`, 포트 2639)의 `utility_db` 에서
+    `CREATE DATABASE '<database>.db' … COLLATION 'UTF8BIN' DBA USER 'DBA' DBA PASSWORD '<admin_password>' MINIMUM PASSWORD LENGTH 1` 로 새 DB를 만들고(새 DB마다 평가 기간이 새로 시작됨),
+    매 기동 시 `start_iq -n dbon_iq` 로 서버를 띄운 뒤 `docker stop` 이면 iqsrv16에 SIGTERM을 보내 체크포인트 후 정상 종료한다. 래퍼는 root로 돌며 IQ 명령은 `iq` OS 계정으로 실행하고,
+    `start_iq` 가 데몬으로 띄운 iqsrv16을 회수하도록 compose `init: true` 를 쓴다. 서버 로그(`*.srvlog`)는 컨테이너 로그로 이어 준다.
+    평가 기간이 끝나 기동에 실패하면 자동 재생성하지 않고 로그에 `dbon rm` 후 `dbon up` 하라는 안내만 남긴다 (데이터가 몰래 지워지지 않도록).
+    IQ dbspace는 자동 확장되지 않으므로 크기를 환경변수로 받는다: `DBON_IQ_SIZE`(main, 기본 500MB), `DBON_IQ_TEMP_SIZE`(기본 200MB), `DBON_IQ_OPTS`(서버 옵션, 기본 `-iqmc 256 -iqtc 256`). `--env` 로 덮어쓴다.
+    `DBA`, `SYS`, `PUBLIC`, `dbo` 등은 앱 계정으로 사용할 수 없고, IQ가 비밀번호의 `;` 를 거부하므로 미리 검사한다.
+- sybaseiq 라이선스: 비공식 커뮤니티 이미지이고 SAP IQ 평가판이므로, 최초 `dbon up sybaseiq` 때만 평가 기간 만료 시 재생성이 필요하다는 점과 SAP 라이선스 동의로 간주됨을 CLI로 안내한다 (`~/.dbon/notices/sybaseiq`).
 - altibase 라이선스: A+ Edition EULA는 사용권을 비상업적 용도로 제한한다. 최초 `dbon up altibase` 때만 이 제한과 사용 시 동의로 간주됨을 CLI로 안내한다 (`~/.dbon/notices/altibase`).
 
 ## 3. 핵심 개념
@@ -102,19 +112,25 @@ engines:
    - cubrid: DB는 컨테이너 환경변수(`CUBRID_DB`)로 생성됨. 공식 이미지가 dba 비밀번호를 설정하지 않으므로 dba 비밀번호 설정 + 앱 사용자 생성 (별도 이미지 빌드 불필요)
    - firebird: 이미지가 환경변수로 앱 사용자와 DB를 만들고 앱 사용자를 DB 소유자로 지정하므로 추가 작업 없음
    - altibase: 앱 사용자 생성 (이미 있으면 비밀번호만 변경), sys 비밀번호를 `manager` 에서 변경
+   - sybaseiq: DB와 DBA 비밀번호는 entrypoint가 만들 때 정해지므로, `GRANT CONNECT … IDENTIFIED BY`(사용자 생성/비밀번호 변경, 멱등) + `SYS_AUTH_RESOURCE_ROLE` 부여만 한다
    - db2: DB는 컨테이너 환경변수(`DBNAME`)로 생성됨. `CONNECT, CREATETAB, BINDADD, IMPLICIT_SCHEMA` + USERSPACE1 사용 권한 부여.
      Db2 계정은 컨테이너의 OS 사용자이고 볼륨에 저장되지 않으므로, 앱 OS 계정은 부트스트랩이 아니라 **준비가 끝날 때마다** root로 멱등하게 생성·동기화한다 (`Engine.on_ready`, 컨테이너 재생성 대비)
 6. **더미데이터 적재** (`--rows 0` 이면 생략): 앱 계정으로 실행
 7. 접속 정보(호스트/포트/계정/JDBC URL) 출력
 
 SQL 실행 방식: 파이썬이 엔진 방언 SQL 파일을 생성 → `docker cp` 로 컨테이너에 복사 → 컨테이너 내 CLI로 실행
-(`sqlplus`, `psql`, `mysql`, `mariadb`, `sqlcmd`, `csql`, `isql`, `db2`). 호스트에 DB 드라이버/클라이언트 설치 불필요.
+(`sqlplus`, `psql`, `mysql`, `mariadb`, `sqlcmd`, `csql`, `isql`, `db2`, `dbisql`). 호스트에 DB 드라이버/클라이언트 설치 불필요.
 
 db2 CLP 주의점:
 - `db2inst1` OS 사용자로 실행하고, 접속과 스크립트 실행을 같은 셸에서 수행한다 (CLP 연결이 부모 프로세스 단위로 유지됨).
 - 비밀번호는 CLP 문장 안에서 따옴표로 감싼다 (감싸지 않으면 `!` 등에서 SQL0104N).
 - 스크립트는 `db2 -stf` 로 실행해 오류 시 중단한다. 종료 코드 1(결과 없음), 2(경고)는 성공, 4 이상은 실패로 처리한다.
 - `DB2CODEPAGE=1208` 을 지정한다 (없으면 클라이언트 코드페이지 변환으로 한글이 깨지거나 SQL0433N 발생).
+
+sybaseiq `dbisql` 주의점:
+- `iq` OS 사용자로 `dbisql -nogui -onerror exit` 를 실행한다. 오류 시 중단하고 0이 아닌 종료 코드를 돌려주며, 경고(예: `TOP` 에 `ORDER BY` 가 없을 때 SQLCODE 122)는 출력만 하고 계속한다.
+- 접속 문자열은 `uid=…;pwd=…;dbn=<database>;eng=dbon_iq;charset=utf-8;links=tcpip{host=127.0.0.1;port=2638}` (서버 이름 없이 TCP로 접속하면 거부된다).
+- 종료 시 자동 커밋되므로(`COMMIT_ON_EXIT`) 스크립트에 `COMMIT` 을 덧붙이지 않는다.
 
 altibase `isql` 주의점:
 - SQL 오류에도 종료 코드 0이고 오류 시 중단하는 옵션이 없어 스크립트는 끝까지 실행된다. 줄 맨 앞의 `[ERR-` 로 실패를 판정하고, 오류 메시지에는 출력 끝이 아니라 첫 오류부터 보여 준다.
@@ -131,12 +147,13 @@ altibase `isql` 주의점:
 | `dbon_customer` | N | cust_id PK, cust_name, email, phone, address(한글 주소), grade, reg_date |
 | `dbon_orders` | N | order_id PK, cust_id FK, emp_id FK, order_date, amount, status |
 
-- 타입 매핑: oracle `NUMBER/VARCHAR2(n CHAR)/DATE/TIMESTAMP`, mssql `NVARCHAR/DATETIME2` + `N'..'` 리터럴, mysql/mariadb `DATETIME`, cubrid `DATETIME`, sybase `UNIVARCHAR/UNICHAR/DATETIME`, db2 `VARCHAR(n CODEUNITS32)/CHAR(n CODEUNITS32)/TIMESTAMP(0)`, altibase `NVARCHAR/NCHAR/DATE` + `TO_DATE` 리터럴, firebird `VARCHAR/CHAR/DECIMAL/TIMESTAMP` 등
+- 타입 매핑: oracle `NUMBER/VARCHAR2(n CHAR)/DATE/TIMESTAMP`, mssql `NVARCHAR/DATETIME2` + `N'..'` 리터럴, mysql/mariadb `DATETIME`, cubrid `DATETIME`, sybase `UNIVARCHAR/UNICHAR/DATETIME`, db2 `VARCHAR(n CODEUNITS32)/CHAR(n CODEUNITS32)/TIMESTAMP(0)`, altibase `NVARCHAR/NCHAR/DATE` + `TO_DATE` 리터럴, firebird `VARCHAR/CHAR/DECIMAL/TIMESTAMP`, sybaseiq `VARCHAR(n×3)/CHAR/DECIMAL/TIMESTAMP` + 따옴표 문자열 날짜 리터럴 등
 - 다건 INSERT: oracle `INSERT ALL … SELECT 1 FROM dual`, mssql 1000건 단위 + `GO`, sybase `INSERT … SELECT … UNION ALL` 200건 단위 + `go`, altibase multi-row `VALUES` 200건 단위 (500건 약 110KB 문장은 실패), 그 외 multi-row `VALUES`
+- sybaseiq 는 IQ main store가 `NCHAR/NVARCHAR`·문자 길이 의미론(`VARCHAR(n CHAR)`)을 지원하지 않아, UTF-8 DB에서 바이트 단위인 `VARCHAR` 길이를 3배로 잡는다. `DROP TABLE IF EXISTS`, multi-row `VALUES`(500건 단위)는 그대로 쓴다
 - altibase 는 `DROP TABLE IF EXISTS` 미지원이라 예외를 무시하는 PSM 블록으로 삭제한다
 - firebird 는 `DROP TABLE IF EXISTS`(5 이하)와 multi-row `VALUES` 미지원이라 `EXECUTE BLOCK` 으로 삭제하고, `INSERT … SELECT … FROM rdb$database UNION ALL` 200건 단위로 적재한다 (한 문장의 컨텍스트 최대 255개)
 - sybase 는 `DROP TABLE IF EXISTS`·문장 끝 `;` 미지원, 컬럼 기본값이 NOT NULL 이므로 nullable 컬럼에 `NULL` 을 명시
-- 문자셋: oracle AL32UTF8, mysql/mariadb utf8mb4, cubrid `en_US.utf8`, mssql NVARCHAR, sybase 서버 문자셋이 iso_1 이라 UNICODE 타입 + `isql -J utf8`, db2 UTF-8 DB + `DB2CODEPAGE=1208`, altibase UTF8 DB + `isql -NLS_USE UTF8`
+- 문자셋: oracle AL32UTF8, mysql/mariadb utf8mb4, cubrid `en_US.utf8`, mssql NVARCHAR, sybase 서버 문자셋이 iso_1 이라 UNICODE 타입 + `isql -J utf8`, db2 UTF-8 DB + `DB2CODEPAGE=1208`, altibase UTF8 DB + `isql -NLS_USE UTF8`, sybaseiq UTF-8 DB(`UTF8BIN`) + 접속 `charset=utf-8` + `LANG=en_US.UTF-8`(dbisql이 SQL 파일을 JVM 문자셋으로 읽음)
 - 외부 라이브러리(Faker) 없이 내장 한글 이름/주소 생성기 사용
 
 ## 7. CLI 명령
@@ -175,7 +192,7 @@ src/dbon/
   runner.py                   # SQL 파일 복사·실행, 준비 대기, 부트스트랩
   engines/
     base.py                   # Engine 추상 클래스 (이미지, compose 서비스, 실행 명령, 부트스트랩 SQL, JDBC)
-    oracle.py postgres.py mysql.py mariadb.py mssql.py cubrid.py sybase.py db2.py altibase.py firebird.py
+    oracle.py postgres.py mysql.py mariadb.py mssql.py cubrid.py sybase.py db2.py altibase.py firebird.py sybaseiq.py
   dummy/
     data.py                   # 랜덤 행 생성 (한글 이름/주소 등)
     dialect.py                # 엔진별 DDL/INSERT 렌더링
@@ -187,6 +204,6 @@ tests/                        # pytest: compose 생성, 방언 SQL, 설정 병�
 - 원격 Docker 호스트, Kubernetes
 - 사용자 정의 스키마 기반 데이터 생성 (현재는 고정 샘플 스키마 + `dbon sql` 로 임의 SQL 실행)
 - SSL 강제, EUC-KR 등 비 UTF-8 문자셋 프리셋
-- sybase 15.7(`datagrip/sybase:15.7`), Sybase IQ
+- sybase 15.7(`datagrip/sybase:15.7`)
 - 그 외 추가 엔진 (엔진 모듈 추가로 확장 가능한 구조)
 - db2 12.1.5.0 외의 icr.io 태그 (11.5.9.0, 12.1.0.0~12.1.4.0, `--image` 로 시도 가능하나 미검증)

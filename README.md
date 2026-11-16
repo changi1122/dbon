@@ -4,7 +4,7 @@
 
 A CLI that uses Docker Compose to launch DBMS containers for development and testing, create database accounts, load dummy data, and clean up resources in one go.
 
-**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), SAP ASE/Sybase (16.0), IBM Db2 (11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition (7.3; non-commercial use only), and Firebird (3/4/5).
+**Supported engines and versions:** Oracle (11/19/21/23), PostgreSQL (13–18), MySQL (5.7/8.0/8.4/9), MariaDB (10.6/10.11/11.4/11.8), SQL Server (2019/2022/2025), CUBRID (11.0–11.4), SAP ASE/Sybase (16.0), IBM Db2 (11.5.4.0/11.5.5.1/11.5.8.0/12.1.5.0), Altibase A+ Edition (7.3; non-commercial use only), Firebird (3/4/5), and SAP IQ/Sybase IQ (16.1; evaluation edition).
 
 See [SPEC.md](SPEC.md) for the detailed design specification.
 
@@ -130,9 +130,10 @@ dbon up db2                               # IBM Db2 11.5.8.0 (image is approxima
 dbon up db2:12.1.5.0                      # IBM Db2 12.1.5.0 (image is approximately 7 GB; runs privileged)
 dbon up altibase                          # Altibase A+ Edition 7.3 (image is approximately 6 GB; amd64; non-commercial use only)
 dbon up firebird                          # Firebird 5
+dbon up sybaseiq                          # SAP IQ (Sybase IQ) 16.1 (community image, approximately 7.5 GB; amd64; evaluation license)
 dbon ls                                   # List instances and their status
 dbon info mysql84                         # Show connection details and JDBC URL
-dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql/db2 inside the container
+dbon shell mysql84 [--admin]              # Open mysql/psql/sqlplus/sqlcmd/csql/isql/db2/dbisql inside the container
 dbon sql mysql84 ./my.sql                 # Execute an SQL file
 dbon seed mysql84 --rows 5000             # Regenerate dummy data
 dbon stop mysql84                         # Stop the container while preserving data
@@ -153,6 +154,14 @@ Db2 database names are limited to 8 characters.
 Altibase A+ Edition is licensed for **non-commercial use only**. By using it through dbon you agree to its EULA, which is included in the image at `/root/altibase_home/conf/Altibase-A+Edition-EULA.txt`. The CLI reminds you of this on your first `dbon up altibase`.
 
 The image ships a prebuilt UTF8 database named `mydb`, so `--database` has no effect on Altibase. Passwords are not case-sensitive.
+
+### SAP IQ (Sybase IQ)
+
+SAP does not publish an IQ image, so dbon uses the community image `baeghaeun/sybase_iq:16.1`, which contains an evaluation copy of SAP IQ 16.1. `sybase` still means SAP ASE; use `sybaseiq` (aliases `iq`, `sapiq`, `sybase-iq`, `sap-iq`) for IQ.
+
+The database bundled in the image has an expired evaluation license, so on first start dbon creates a new UTF-8 database named after `--database`, which starts a new evaluation period. Once that period ends, the server no longer starts (`No SYSAM License Available` in `dbon logs`); recreate the instance with `dbon rm` and `dbon up` to continue, which deletes its data. The CLI reminds you of this on your first `dbon up sybaseiq`.
+
+IQ dbspaces do not grow on their own: the main store is 500 MB and the temporary store 200 MB. Set larger sizes (in MB) when creating the instance, for example `dbon up sybaseiq --env DBON_IQ_SIZE=2000 --env DBON_IQ_TEMP_SIZE=500`. Passwords cannot contain `;`.
 
 ## Account configuration
 

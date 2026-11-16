@@ -368,6 +368,64 @@ def test_firebird_rejects_reserved_user():
         engines.get("firebird").prepare(inst)
 
 
+# ---- sybase iq ----------------------------------------------------------------
+def test_sybaseiq_dialect():
+    sql = render("sybaseiq", 1200, seed=1)
+    assert "emp_name VARCHAR(150) NOT NULL" in sql  # VARCHAR counts UTF-8 bytes
+    assert "gender CHAR(1)" in sql and "created_at TIMESTAMP" in sql
+    assert "DROP TABLE IF EXISTS dbon_orders;" in sql
+    assert sql.count("INSERT INTO dbon_emp ") == 3 and "NCHAR" not in sql
+    assert Dialect("sybaseiq").literal(date(2024, 1, 2)) == "'2024-01-02'"
+    assert Dialect("sybaseiq").literal(datetime(2024, 1, 2, 3, 4, 5)) == "'2024-01-02 03:04:05'"
+
+
+def test_sybaseiq_engine():
+    eng = engines.get("iq")
+    assert all(engines.get(a) is eng for a in ("sybaseiq", "sapiq", "sybase-iq", "sap-iq"))
+    assert engines.get("sybase").name == "sybase"  # still SAP ASE
+    inst = make("sybaseiq")
+    svc = eng.compose(inst)["services"]["db"]
+    assert svc["image"] == "baeghaeun/sybase_iq:16.1"
+    assert svc["volumes"] == ["data:/home/iq/data"]
+    assert svc["init"] is True
+    assert svc["entrypoint"][0] == "bash" and "$$DBON_DBA_PASSWORD" in svc["entrypoint"][2]
+    env = svc["environment"]
+    assert env["DBON_IQ_DB"] == "testdb" and env["DBON_DBA_PASSWORD"] == inst.admin_password
+    assert eng.jdbc_url(inst) == "jdbc:sybase:Tds:localhost:12345?ServiceName=testdb&CHARSET=utf8"
+    assert eng.probe_passwords(inst) == [inst.admin_password]
+    assert eng.spec("test")["image"] == "baeghaeun/sybase_iq:test"
+    boot = eng.bootstrap_sql(inst, inst.admin_password)
+    assert f'GRANT CONNECT TO dbon IDENTIFIED BY "{inst.password}";' in boot
+    assert "GRANT ROLE SYS_AUTH_RESOURCE_ROLE TO dbon;" in boot
+
+
+def test_sybaseiq_env_override():
+    inst = make("sybaseiq")
+    inst.extra["env"] = {"DBON_IQ_SIZE": "2000"}
+    assert engines.get("sybaseiq").compose(inst)["services"]["db"]["environment"]["DBON_IQ_SIZE"] == "2000"
+
+
+def test_sybaseiq_exec():
+    eng = engines.get("sybaseiq")
+    inst = make("sybaseiq")
+    spec = eng.exec_sql(inst, "/tmp/x.sql", admin=False)
+    assert spec.user == "iq"
+    assert spec.cmd[-3:] == ["-onerror", "exit", "/tmp/x.sql"]
+    assert spec.env == {"DBON_U": "dbon", "DBON_P": inst.password, "DBON_D": "testdb", "LANG": "en_US.UTF-8"}
+    admin = eng.exec_sql(inst, "/tmp/x.sql", admin=True, admin_password="other")
+    assert admin.env["DBON_U"] == "DBA" and admin.env["DBON_P"] == "other"
+    assert eng.shell(inst, admin=False).cmd[-1] == "dbisql"
+
+
+@pytest.mark.parametrize("field,value", [("user", "dba"), ("user", "Sys"), ("password", "a;b"), ("admin_password", "a;b")])
+def test_sybaseiq_rejects(field, value):
+    inst = make("postgres")
+    inst.engine, inst.version = "sybaseiq", "16.1"
+    setattr(inst, field, value)
+    with pytest.raises(engines.EngineError):
+        engines.get("sybaseiq").prepare(inst)
+
+
 def test_extra_env_in_compose():
     inst = make("mssql", "2019")
     inst.extra["env"] = {"MSSQL_COLLATION": "Korean_Wansung_CI_AS"}
